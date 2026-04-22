@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "server",
+  "dolt_database": "AGENTE_ALESSANDRA",
+  "project_id": "e407129b-9826-4932-aeba-52eb062f2753"
+}
