@@ -2,3 +2,28 @@
 # Dolt database files (added by bd init)
 .dolt/
 *.db
+
+# Local MCP config (contains secrets)
+.mcp.json
+
+# Next.js
+.next/
+out/
+
+# Node
+node_modules/
+
+# Env files with secrets
+.env*.local
+
+# Vercel
+.vercel/
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Test coverage
+coverage/
+
+# Build output
+dist/
