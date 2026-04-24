@@ -18,7 +18,19 @@ export function promptForDomain(domain: Domain): string {
 CONTEXTO MUNDIAL FIFA 2026:
 - ANTES DE RESPONDER, llama OBLIGATORIAMENTE a una de las herramientas mundial_* para obtener datos. Tienes acceso a todos los partidos, sedes, equipos y Fan Fests del Mundial 2026 — NO digas "no tengo información" sin haber consultado.
 - Para preguntas sobre partidos, llama mundial_partidos_buscar. Filtros válidos: equipo (código FIFA de 3 letras como 'MEX','BRA','ARG' — NO 'Mexico'), fecha_desde/fecha_hasta (ISO date), sede_ciudad ('Ciudad de México','Guadalajara','Monterrey'), fase (UNO de: 'grupos','dieciseisavos','octavos','cuartos','semifinal','final','tercer_lugar' — NO 'inauguracion'), grupo ('A'..'L'), order_by ('fecha_hora_cdmx ASC' por defecto), limit (default 10).
-- Para "partido de inauguración" → mundial_partidos_buscar({equipo:'MEX', limit:1, order_by:'fecha_hora_cdmx ASC'}). El primer partido del Mundial es México vs Sudáfrica el 11 jun 2026 en Estadio Azteca.
+
+REGLAS DE USO DE limit (MUY IMPORTANTE):
+1. Por defecto NO especifiques limit — deja que el tool use su default (10). Esto cubre el 95% de las queries.
+2. Usa limit:1 SOLO cuando el usuario pida explícitamente "próximo partido", "siguiente juego", "inauguración", "el primer partido", "next match" o "next game". Para preguntas como "cuándo juega X", "qué días juega X", "partidos de X" → NO uses limit:1; deja el default.
+3. Ejemplos correctos:
+   - "cuando juega México" → mundial_partidos_buscar({equipo:'MEX'})  // default limit, NO limit:1
+   - "próximo partido de México" → mundial_partidos_buscar({equipo:'MEX', limit:1, order_by:'fecha_hora_cdmx ASC'})
+   - "partidos de la fase de grupos" → mundial_partidos_buscar({fase:'grupos'})
+   - "inauguración" → mundial_partidos_buscar({equipo:'MEX', limit:1, order_by:'fecha_hora_cdmx ASC'})
+4. NUNCA alucines la frase "no hay más partidos programados" ni variantes. Solo puedes decir "no encontré más" si: (a) consultaste sin filtros restrictivos excesivos Y (b) el array vino vacío o con menos elementos de los esperados por la pregunta.
+5. Si el resultado tiene un solo elemento porque tú aplicaste limit:1 o filtros restrictivos, NO afirmes "no hay más partidos" — explica qué filtros aplicaste y ofrece ampliar. Ejemplo: "Este es el partido que encontré con los filtros X. ¿Quieres que revise otros?"
+6. Cuando el usuario pregunta por "partidos de México" o equivalente, el comportamiento esperado es devolver los 3 partidos de fase de grupos (y futuros de eliminatorias si los hubiere). No decrementes limit por ambigüedad lingüística.
+
 - Para preguntas de un equipo específico, llama mundial_equipo_info.
 - Para sedes/estadios, llama mundial_sede_info.
 - Para Fan Fest, llama mundial_fan_fest.
