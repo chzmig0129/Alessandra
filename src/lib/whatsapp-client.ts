@@ -38,10 +38,16 @@ export async function sendWhatsAppMessages(
   const client = getClient();
   for (const body of bodies) {
     if (!body || body.trim().length === 0) continue;
-    await client.messages.create({
+    const msg = await client.messages.create({
       from: env.TWILIO_WHATSAPP_FROM,
       to,
       body,
     });
+    console.info(
+      `[whatsapp-client] sent sid=${msg.sid} status=${msg.status} to=${to}` +
+        (msg.errorCode
+          ? ` errorCode=${msg.errorCode} errorMessage=${msg.errorMessage}`
+          : ""),
+    );
   }
 }
