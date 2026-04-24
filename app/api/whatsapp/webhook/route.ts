@@ -2,10 +2,15 @@
  * POST /api/whatsapp/webhook
  *
  * Receives inbound WhatsApp messages from Twilio Sandbox, resolves the user
- * and conversation, calls the Alessandra orchestrator, and returns a TwiML
- * response.
+ * and conversation, then immediately ACKs Twilio with an empty TwiML response
+ * and fires the LLM turn in the background. The reply is sent as an outbound
+ * message via the Twilio REST API, bypassing the ~15s sync timeout.
  *
- * Spec: AGENTE_ALESSANDRA-4ea
+ * NOTA serverless: el patrón void-promise funciona en Node standalone (dev
+ * local, cloudflared). Al deploy en Vercel, reemplazar con NextRequest +
+ * ctx.waitUntil() o mover a una cola (Inngest/BullMQ).
+ *
+ * Spec: AGENTE_ALESSANDRA-a4r
  */
 
 import Twilio from "twilio";
@@ -13,6 +18,7 @@ import { env } from "@/env";
 import { getOrCreateUser, getOrCreateActiveSession } from "@/memory/session";
 import { processTurn } from "@/agent/orchestrator";
 import { mdToWhatsApp } from "@/lib/whatsapp-format";
+import { sendWhatsAppMessages } from "@/lib/whatsapp-client";
 
 export const runtime = "nodejs";
 
@@ -110,6 +116,68 @@ function twimlResponse(text: string): Response {
     status: 200,
     headers: { "Content-Type": "text/xml; charset=utf-8" },
   });
+}
+
+/** Empty TwiML ACK — sent immediately so Twilio doesn't time out at ~15s. */
+function emptyTwimlAck(): Response {
+  return new Response('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
+    status: 200,
+    headers: { "Content-Type": "text/xml; charset=utf-8" },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Background task
+// ---------------------------------------------------------------------------
+
+/**
+ * Runs the LLM turn and delivers the reply via Twilio REST API.
+ *
+ * This function is intentionally detached (void-promise) so the HTTP handler
+ * can return the empty TwiML ACK immediately without waiting for the LLM.
+ * Errors are caught and surfaced as a fallback error message to the user.
+ */
+async function processInBackground(
+  to: string,
+  userId: string,
+  userMessage: string,
+  attachments: { lat?: number; lng?: number; imageUrl?: string } | undefined,
+): Promise<void> {
+  let responseText: string;
+  try {
+    const result = await processTurn({
+      userId,
+      userMessage,
+      attachments,
+    });
+    responseText = result.text;
+  } catch (err) {
+    console.error("[whatsapp/webhook] processTurn threw in background:", err);
+    responseText = "Tuve un problema técnico. Inténtalo de nuevo en unos segundos.";
+  }
+
+  const formatted = mdToWhatsApp(responseText);
+  const chunks = chunkMessage(formatted, 1400);
+
+  try {
+    await sendWhatsAppMessages(to, chunks);
+    console.info(
+      `[whatsapp/webhook] background done: ${chunks.length} chunks sent to ${to}`,
+    );
+  } catch (err) {
+    console.error("[whatsapp/webhook] sendWhatsAppMessages failed:", err);
+    // Best-effort fallback: try sending a short error message
+    try {
+      await sendWhatsAppMessages(to, [
+        "Tuve un problema técnico. Inténtalo de nuevo en unos segundos.",
+      ]);
+    } catch (fallbackErr) {
+      console.error(
+        "[whatsapp/webhook] fallback sendWhatsAppMessages also failed:",
+        fallbackErr,
+      );
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -231,6 +299,7 @@ export async function POST(req: Request): Promise<Response> {
     // Non-fatal — proceed without blocked check
   } else if (userRow?.blocked === true) {
     console.info(`[whatsapp/webhook] Blocked user ${user.id} — returning neutral message.`);
+    // Blocked users get an immediate sync TwiML response (no LLM involved, fits in 15s)
     return twimlResponse("No puedo atenderte en este momento.");
   }
 
@@ -263,7 +332,7 @@ export async function POST(req: Request): Promise<Response> {
       ? `${locationMarker}\n\n${rawBody}`
       : locationMarker;
   } else if (!rawBody.trim()) {
-    // No text and no location
+    // No text and no location — immediate TwiML response is fine (no LLM)
     return twimlResponse("¿En qué puedo ayudarte?");
   } else {
     userMessage = rawBody;
@@ -277,22 +346,27 @@ export async function POST(req: Request): Promise<Response> {
     attachments.lng = Number(longitude);
   }
 
-  // ---- 8. Call orchestrator --------------------------------------------------
+  // ---- 8. Fire background task + ACK immediately ----------------------------
+  //
+  // Do NOT await processTurn here — it can take 20-30s for complex queries,
+  // which exceeds Twilio's ~15s sandbox timeout.
+  //
+  // conversationId is resolved above; unused here because processTurn resolves
+  // its own session internally, but kept to confirm session was created before
+  // we detach. (This also ensures the row exists before the background task
+  // writes to it.)
+  void conversationId;
 
-  let responseText: string;
-  try {
-    const result = await processTurn({
-      userId: user.id,
-      userMessage,
-      attachments: Object.keys(attachments).length > 0 ? attachments : undefined,
-    });
-    responseText = result.text;
-  } catch (err) {
-    console.error("[whatsapp/webhook] processTurn threw:", err);
-    responseText = "Tuve un problema técnico. Inténtalo de nuevo en unos segundos.";
-  }
+  void processInBackground(
+    rawFrom,
+    user.id,
+    userMessage,
+    Object.keys(attachments).length > 0 ? attachments : undefined,
+  ).catch((err) =>
+    console.error("[whatsapp/webhook] background task failed:", err),
+  );
 
-  // ---- 9. Return TwiML -------------------------------------------------------
+  console.info("[whatsapp/webhook] ACKed and background started for", rawFrom);
 
-  return twimlResponse(mdToWhatsApp(responseText));
+  return emptyTwimlAck();
 }
