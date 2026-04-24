@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@ai-sdk/google": "^1.0.0",
+    "postgres": "^3.4.4",
     "@ai-sdk/openai": "^1.0.0",
     "@mastra/core": "^1.28.0",
     "@supabase/supabase-js": "^2.50.0",

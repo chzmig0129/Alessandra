@@ -1,0 +1,391 @@
+/**
+ * queries.ts — Supabase query functions for the Mundial FIFA 2026 domain.
+ *
+ * All queries hit the public v_mundial_* views defined in
+ * migrations/sql/002_views.sql which denormalize the "mundial-fifa" schema.
+ * No schema() override is needed — the views live in public.
+ *
+ * LIMIT: max 50 rows, default 10 for searches.
+ */
+
+import { supabaseAdmin } from "@/db/supabase-server";
+
+// ---------------------------------------------------------------------------
+// Row types (match v_mundial_* view columns)
+// ---------------------------------------------------------------------------
+
+export interface PartidoRow {
+  id: number;
+  fecha_hora_cdmx: string | null;
+  fase: string | null;
+  grupo: string | null;
+  equipo_a_codigo: string | null;
+  equipo_a_nombre: string | null;
+  equipo_a_desc: string | null;
+  conf_a: string | null;
+  rank_a: number | null;
+  equipo_b_codigo: string | null;
+  equipo_b_nombre: string | null;
+  equipo_b_desc: string | null;
+  conf_b: string | null;
+  rank_b: number | null;
+  sede_id: number | null;
+  sede_ciudad: string | null;
+  sede_pais: string | null;
+  sede_estadio: string | null;
+  estado: string | null;
+  marcador_a: number | null;
+  marcador_b: number | null;
+}
+
+export interface SedeRow {
+  id: number;
+  nombre: string;
+  ciudad: string;
+  pais: string;
+  direccion: string | null;
+  capacidad: number | null;
+  latitud: number | null;
+  longitud: number | null;
+  zona_horaria: string | null;
+  descripcion: string | null;
+  google_maps_url: string | null;
+}
+
+export interface FanFestRow {
+  id: number;
+  nombre: string;
+  ciudad: string;
+  pais: string;
+  ubicacion: string | null;
+  latitud: number | null;
+  longitud: number | null;
+  fecha_inicio: string | null;
+  fecha_fin: string | null;
+  horario: string | null;
+  capacidad: number | null;
+  entrada_gratis: boolean | null;
+  descripcion: string | null;
+  url_oficial: string | null;
+  google_maps_url: string | null;
+}
+
+export interface EventoRow {
+  id: number;
+  partido_id: number;
+  minuto: number | null;
+  minuto_extra: number | null;
+  tipo: string | null;
+  equipo_codigo: string | null;
+  jugador: string | null;
+  jugador_asiste: string | null;
+  detalle: string | null;
+}
+
+export interface AlineacionRow {
+  id: number;
+  partido_id: number;
+  equipo_codigo: string;
+  formacion: string | null;
+  tipo: string | null;
+  numero: number | null;
+  jugador: string | null;
+  posicion: string | null;
+  es_capitan: boolean | null;
+}
+
+export interface EquipoRow {
+  codigo: string;
+  nombre: string;
+  nombre_en: string | null;
+  confederacion: string | null;
+  grupo: string | null;
+  bandera_url: string | null;
+  bandera_emoji: string | null;
+  fifa_ranking: number | null;
+}
+
+export interface PartidoDetalleRow extends PartidoRow {
+  eventos: EventoRow[];
+  alineaciones: AlineacionRow[];
+}
+
+// ---------------------------------------------------------------------------
+// Filters
+// ---------------------------------------------------------------------------
+
+export interface PartidoFilters {
+  /** ISO date string, YYYY-MM-DD — matches fecha_hora_cdmx date part */
+  fecha?: string;
+  /** Team code (3-letter FIFA) or name fragment */
+  equipo?: string;
+  /** Venue city */
+  ciudad?: string;
+  /** Match phase: 'grupos' | 'dieciseisavos' | 'octavos' | 'cuartos' | 'semifinal' | 'tercer_lugar' | 'final' */
+  fase?: string;
+  /** Group letter A-L */
+  grupo?: string;
+  /** Match status: 'programado' | 'en_vivo' | 'finalizado' | 'suspendido' */
+  estado?: string;
+  /** 'asc' | 'desc' — default 'asc' */
+  order_by?: "asc" | "desc";
+  /** Number of rows to return — default 10, max 50 */
+  limit?: number;
+  /** Only matches scheduled at or after now() */
+  proximos?: boolean;
+}
+
+export interface FanFestFilters {
+  ciudad?: string;
+  pais?: string;
+  limit?: number;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+const DEFAULT_LIMIT = 10;
+const MAX_LIMIT = 50;
+
+function clampLimit(n: number | undefined): number {
+  return Math.min(n ?? DEFAULT_LIMIT, MAX_LIMIT);
+}
+
+// ---------------------------------------------------------------------------
+// fetchPartidos
+// ---------------------------------------------------------------------------
+
+export async function fetchPartidos(
+  filters: PartidoFilters = {},
+): Promise<{ data: PartidoRow[]; error: string | null }> {
+  const limit = clampLimit(filters.limit);
+
+  let query = supabaseAdmin
+    .from("v_mundial_partidos")
+    .select("*")
+    .limit(limit);
+
+  if (filters.fecha) {
+    // fecha_hora_cdmx is timestamptz; filter by date range in CDMX timezone.
+    // We cast to text and match prefix to avoid timezone math in JS.
+    query = query
+      .gte("fecha_hora_cdmx", `${filters.fecha}T00:00:00`)
+      .lt("fecha_hora_cdmx", `${filters.fecha}T23:59:59`);
+  }
+
+  if (filters.proximos) {
+    query = query.gte("fecha_hora_cdmx", new Date().toISOString());
+  }
+
+  if (filters.fase) {
+    query = query.eq("fase", filters.fase);
+  }
+
+  if (filters.grupo) {
+    query = query.eq("grupo", filters.grupo.toUpperCase());
+  }
+
+  if (filters.estado) {
+    query = query.eq("estado", filters.estado);
+  }
+
+  if (filters.ciudad) {
+    query = query.ilike("sede_ciudad", `%${filters.ciudad}%`);
+  }
+
+  if (filters.equipo) {
+    const eq = filters.equipo.toUpperCase();
+    // Try exact code match first; fallback covered by ilike on name
+    // Supabase doesn't support OR across columns in a single .filter easily,
+    // so we use the .or() helper.
+    query = query.or(
+      `equipo_a_codigo.eq.${eq},equipo_b_codigo.eq.${eq},` +
+        `equipo_a_nombre.ilike.%${filters.equipo}%,equipo_b_nombre.ilike.%${filters.equipo}%,` +
+        `equipo_a_desc.ilike.%${filters.equipo}%,equipo_b_desc.ilike.%${filters.equipo}%`,
+    );
+  }
+
+  const order = filters.order_by === "desc" ? { ascending: false } : { ascending: true };
+  query = query.order("fecha_hora_cdmx", order);
+
+  const { data, error } = await query;
+
+  if (error) {
+    return { data: [], error: error.message };
+  }
+  return { data: (data ?? []) as PartidoRow[], error: null };
+}
+
+// ---------------------------------------------------------------------------
+// fetchSedeInfo
+// ---------------------------------------------------------------------------
+
+export async function fetchSedeInfo(
+  idOrCity: string | number,
+): Promise<{ data: SedeRow | null; error: string | null }> {
+  if (typeof idOrCity === "number" || /^\d+$/.test(String(idOrCity))) {
+    const { data, error } = await supabaseAdmin
+      .from("v_mundial_sedes")
+      .select("*")
+      .eq("id", Number(idOrCity))
+      .maybeSingle();
+    if (error) return { data: null, error: error.message };
+    return { data: data as SedeRow | null, error: null };
+  }
+
+  // Search by city or name fragment
+  const { data, error } = await supabaseAdmin
+    .from("v_mundial_sedes")
+    .select("*")
+    .or(
+      `ciudad.ilike.%${idOrCity}%,nombre.ilike.%${idOrCity}%`,
+    )
+    .limit(1)
+    .maybeSingle();
+
+  if (error) return { data: null, error: error.message };
+  return { data: data as SedeRow | null, error: null };
+}
+
+// ---------------------------------------------------------------------------
+// fetchFanFest
+// ---------------------------------------------------------------------------
+
+export async function fetchFanFest(
+  filters: FanFestFilters = {},
+): Promise<{ data: FanFestRow[]; error: string | null }> {
+  const limit = clampLimit(filters.limit);
+
+  let query = supabaseAdmin
+    .from("v_mundial_fan_fest")
+    .select("*")
+    .limit(limit)
+    .order("nombre", { ascending: true });
+
+  if (filters.ciudad) {
+    query = query.ilike("ciudad", `%${filters.ciudad}%`);
+  }
+
+  if (filters.pais) {
+    query = query.ilike("pais", `%${filters.pais}%`);
+  }
+
+  const { data, error } = await query;
+  if (error) return { data: [], error: error.message };
+  return { data: (data ?? []) as FanFestRow[], error: null };
+}
+
+// ---------------------------------------------------------------------------
+// fetchPartidoDetalle
+// ---------------------------------------------------------------------------
+
+export async function fetchPartidoDetalle(
+  id: number,
+): Promise<{ data: PartidoDetalleRow | null; error: string | null }> {
+  // Fetch the partido from the view
+  const { data: partido, error: pErr } = await supabaseAdmin
+    .from("v_mundial_partidos")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (pErr) return { data: null, error: pErr.message };
+  if (!partido) return { data: null, error: `Partido ${id} no encontrado` };
+
+  const base = partido as PartidoRow;
+
+  // Fetch match events
+  const { data: eventosData, error: eErr } = await supabaseAdmin
+    .from("v_mundial_eventos_partido")
+    .select("*")
+    .eq("partido_id", id)
+    .order("minuto", { ascending: true });
+
+  if (eErr) {
+    return { data: null, error: eErr.message };
+  }
+
+  const eventos = (eventosData ?? []) as EventoRow[];
+
+  // TODO: No view v_mundial_alineaciones exists yet in 002_views.sql.
+  //       Returning empty array until the view is created.
+  const alineaciones: AlineacionRow[] = [];
+
+  return {
+    data: { ...base, eventos, alineaciones },
+    error: null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// fetchEquipo
+// ---------------------------------------------------------------------------
+
+export interface EquipoConPartidosResult {
+  equipo: EquipoRow | null;
+  proximos_partidos: PartidoRow[];
+  error: string | null;
+}
+
+export async function fetchEquipo(
+  codeOrName: string,
+): Promise<EquipoConPartidosResult> {
+  const upper = codeOrName.toUpperCase();
+
+  // Try exact code first
+  let { data: equipo, error: eqErr } = await supabaseAdmin
+    .from("v_mundial_equipos")
+    .select("*")
+    .eq("codigo", upper)
+    .maybeSingle();
+
+  if (eqErr) return { equipo: null, proximos_partidos: [], error: eqErr.message };
+
+  // If no exact code match, search by name
+  if (!equipo) {
+    const { data: byName, error: nameErr } = await supabaseAdmin
+      .from("v_mundial_equipos")
+      .select("*")
+      .or(
+        `nombre.ilike.%${codeOrName}%,nombre_en.ilike.%${codeOrName}%`,
+      )
+      .limit(1)
+      .maybeSingle();
+
+    if (nameErr) return { equipo: null, proximos_partidos: [], error: nameErr.message };
+    equipo = byName;
+  }
+
+  if (!equipo) {
+    return {
+      equipo: null,
+      proximos_partidos: [],
+      error: `Equipo "${codeOrName}" no encontrado`,
+    };
+  }
+
+  const codigo = (equipo as EquipoRow).codigo;
+
+  // Fetch upcoming matches for this team
+  const { data: partidos, error: pErr } = await fetchPartidos({
+    equipo: codigo,
+    proximos: true,
+    order_by: "asc",
+    limit: 5,
+  });
+
+  if (pErr) {
+    return {
+      equipo: equipo as EquipoRow,
+      proximos_partidos: [],
+      error: pErr,
+    };
+  }
+
+  return {
+    equipo: equipo as EquipoRow,
+    proximos_partidos: partidos,
+    error: null,
+  };
+}
