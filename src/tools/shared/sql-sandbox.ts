@@ -141,6 +141,9 @@ function validateAndNormaliseSql(rawSql: string): string {
   return singleStatement;
 }
 
+// Exported for unit testing only.
+export { validateAndNormaliseSql };
+
 // ---------------------------------------------------------------------------
 // Audit logger — fire-and-forget, never throws.
 // ---------------------------------------------------------------------------

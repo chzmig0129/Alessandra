@@ -1,0 +1,580 @@
+/**
+ * Mastra tools for the Reportes Ciudadanos domain.
+ *
+ * Exports 7 tools:
+ *   1. reporte_iniciar           — starts a new report flow
+ *   2. reporte_slot_llenar       — fills one slot and advances the FSM
+ *   3. reporte_analizar_imagen   — vision analysis; never mutates flow
+ *   4. reporte_confirmar_y_crear — creates the lead record on confirmation
+ *   5. reporte_cancelar          — cancels and clears the flow
+ *   6. reporte_consultar         — looks up one report by folio or user_id
+ *   7. reporte_listar_mios       — lists recent reports for a user
+ */
+
+import { createTool } from "@mastra/core/tools";
+import { z } from "zod";
+
+import { supabaseAdmin } from "@/db/supabase-server";
+import { getFlowState, setFlowState, clearFlowState } from "@/memory/flow-state";
+import { transitions, nextRequiredSlot } from "./state-machine";
+import type { ReporteState } from "./state-machine";
+import { SLOT_CONFIG } from "./slots";
+import { callCrearLead } from "./folio";
+import { analyzeImage } from "@/tools/shared/vision";
+import { lookupEmergencyContacts } from "@/tools/shared/emergency-contacts";
+import { isUrgentCategory, getRoutingArea } from "@/validation/taxonomy";
+
+// ---------------------------------------------------------------------------
+// Helper — emergency-contact shape for output schema
+// ---------------------------------------------------------------------------
+
+const EmergencyContactSchema = z.object({
+  id: z.number(),
+  nombre: z.string(),
+  telefono: z.string(),
+  categoria: z.string().nullable(),
+  descripcion: z.string().nullable(),
+  activo: z.boolean(),
+});
+
+// ---------------------------------------------------------------------------
+// 1. reporte_iniciar
+// ---------------------------------------------------------------------------
+
+export const reporteIniciar = createTool({
+  id: "reporte_iniciar",
+  description:
+    "Inicia un nuevo flujo de reporte ciudadano. " +
+    "Llama esta herramienta al inicio de cada reporte, antes de pedir datos al usuario. " +
+    "Devuelve el prompt inicial para guiar al usuario.",
+  inputSchema: z.object({
+    conversation_id: z
+      .string()
+      .min(1)
+      .describe("ID de la conversación activa (UUID)."),
+    categoria_hint: z
+      .string()
+      .optional()
+      .describe(
+        "Sugerencia de categoría ya detectada del mensaje inicial (ej: 'bache'). " +
+        "Opcional — si no se tiene, omitir.",
+      ),
+  }),
+  outputSchema: z.discriminatedUnion("ok", [
+    z.object({
+      ok: z.literal(true),
+      next_prompt: z.string(),
+    }),
+    z.object({
+      ok: z.literal(false),
+      error: z.string(),
+    }),
+  ]),
+  execute: async ({ conversation_id, categoria_hint }) => {
+    const now = new Date();
+    const slots: Record<string, unknown> = {};
+    if (categoria_hint) {
+      slots["categoria_hint"] = categoria_hint;
+    }
+
+    const result = await setFlowState(conversation_id, {
+      domain: "reportes",
+      step: "INICIO",
+      slots,
+      started_at: now.toISOString(),
+      intent_snapshot: "reporte_ciudadano",
+    });
+
+    if (!result.ok) {
+      return { ok: false as const, error: result.error };
+    }
+
+    const prompt =
+      SLOT_CONFIG["IDENTIFICANDO_CATEGORIA"].slots[0]?.prompt ??
+      "¿Qué problema quieres reportar?";
+
+    return { ok: true as const, next_prompt: prompt };
+  },
+});
+
+// ---------------------------------------------------------------------------
+// 2. reporte_slot_llenar
+// ---------------------------------------------------------------------------
+
+export const reporteSlotLlenar = createTool({
+  id: "reporte_slot_llenar",
+  description:
+    "Registra el valor de un slot del reporte activo y avanza el estado si corresponde. " +
+    "Úsala cada vez que el usuario provee un dato del reporte (categoría, descripción, ubicación, foto, confirmación, etc.).",
+  inputSchema: z.object({
+    conversation_id: z
+      .string()
+      .min(1)
+      .describe("ID de la conversación activa."),
+    slot: z
+      .string()
+      .min(1)
+      .describe(
+        "Clave del slot a llenar, ej: 'categoria', 'tipo', 'descripcion', 'ubicacion', 'foto_url', 'confirmado'.",
+      ),
+    valor: z
+      .unknown()
+      .describe(
+        "Valor del slot. Para 'ubicacion' puede ser {lat, lng} o {direccion_libre, colonia}. " +
+        "Para 'confirmado' debe ser un booleano. Para 'foto_url' una URL o el string 'sin_foto'.",
+      ),
+  }),
+  outputSchema: z.discriminatedUnion("ok", [
+    z.object({
+      ok: z.literal(true),
+      next_state: z.string(),
+      next_prompt: z.string().optional(),
+    }),
+    z.object({
+      ok: z.literal(false),
+      error: z.string(),
+    }),
+  ]),
+  execute: async ({ conversation_id, slot, valor }) => {
+    // 1. Load current flow
+    const flowResult = await getFlowState(conversation_id);
+    if (!flowResult.ok) {
+      return { ok: false as const, error: flowResult.error };
+    }
+    if (!flowResult.flow) {
+      return { ok: false as const, error: "No hay un flujo de reporte activo." };
+    }
+
+    const flow = flowResult.flow;
+    const currentState = flow.step as ReporteState;
+    const stateConfig = SLOT_CONFIG[currentState];
+
+    // 2. Validate the slot value if a validator exists for this state's slot
+    if (stateConfig) {
+      const slotDef = stateConfig.slots.find((s) => s.key === slot);
+      if (slotDef) {
+        if (slotDef.asyncValidator) {
+          const validation = await slotDef.asyncValidator(valor);
+          if (!validation.success) {
+            return { ok: false as const, error: validation.error };
+          }
+        } else if (slotDef.validator) {
+          const parsed = slotDef.validator.safeParse(valor);
+          if (!parsed.success) {
+            return {
+              ok: false as const,
+              error: parsed.error.issues.map((i) => i.message).join("; "),
+            };
+          }
+        }
+      }
+    }
+
+    // 3. Mutate slots and persist
+    const updatedSlots: Record<string, unknown> = { ...flow.slots, [slot]: valor };
+
+    // 4. Compute next state
+    const nextState = transitions(currentState, updatedSlots);
+
+    // 5. Persist updated flow
+    const saveResult = await setFlowState(conversation_id, {
+      ...flow,
+      step: nextState,
+      slots: updatedSlots,
+    });
+
+    if (!saveResult.ok) {
+      return { ok: false as const, error: saveResult.error };
+    }
+
+    // 6. Determine next prompt (if any required slots remain)
+    const nextSlotInfo = nextRequiredSlot(nextState, updatedSlots);
+    const nextPrompt = nextSlotInfo?.prompt;
+
+    return {
+      ok: true as const,
+      next_state: nextState,
+      ...(nextPrompt !== undefined ? { next_prompt: nextPrompt } : {}),
+    };
+  },
+});
+
+// ---------------------------------------------------------------------------
+// 3. reporte_analizar_imagen
+// ---------------------------------------------------------------------------
+
+export const reporteAnalizarImagen = createTool({
+  id: "reporte_analizar_imagen",
+  description:
+    "Analiza una imagen usando visión por computadora y devuelve una descripción y categoría sugerida. " +
+    "NO muta el flujo — solo propone. El orquestador decide si usar los resultados. " +
+    "Úsala cuando el usuario adjunta una foto para ayudar a identificar la categoría del problema.",
+  inputSchema: z.object({
+    image_url: z
+      .string()
+      .url()
+      .describe("URL pública de la imagen a analizar."),
+  }),
+  outputSchema: z.discriminatedUnion("ok", [
+    z.object({
+      ok: z.literal(true),
+      description: z.string(),
+      suggested_category: z.string().optional(),
+    }),
+    z.object({
+      ok: z.literal(false),
+      error: z.string(),
+    }),
+  ]),
+  execute: async ({ image_url }) => {
+    try {
+      const result = await analyzeImage(image_url);
+      return {
+        ok: true as const,
+        description: result.description,
+        ...(result.suggested_category !== undefined
+          ? { suggested_category: result.suggested_category }
+          : {}),
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { ok: false as const, error: message };
+    }
+  },
+});
+
+// ---------------------------------------------------------------------------
+// 4. reporte_confirmar_y_crear
+// ---------------------------------------------------------------------------
+
+export const reporteConfirmarYCrear = createTool({
+  id: "reporte_confirmar_y_crear",
+  description:
+    "Crea el reporte ciudadano en base de datos luego de la confirmación del usuario. " +
+    "Requiere que el flujo esté en estado CONFIRMACION y que el slot 'confirmado' sea true. " +
+    "Devuelve el folio asignado y, si el problema es urgente, incluye contactos de emergencia.",
+  inputSchema: z.object({
+    conversation_id: z
+      .string()
+      .min(1)
+      .describe("ID de la conversación activa."),
+    user_id: z
+      .string()
+      .min(1)
+      .describe("ID del usuario en la tabla public.users."),
+  }),
+  outputSchema: z.discriminatedUnion("ok", [
+    z.object({
+      ok: z.literal(true),
+      folio: z.string(),
+      lead_id: z.string(),
+      urgent_contacts: z.array(EmergencyContactSchema).optional(),
+    }),
+    z.object({
+      ok: z.literal(false),
+      error: z.string(),
+    }),
+  ]),
+  execute: async ({ conversation_id, user_id }) => {
+    // 1. Load flow
+    const flowResult = await getFlowState(conversation_id);
+    if (!flowResult.ok) {
+      return { ok: false as const, error: flowResult.error };
+    }
+    if (!flowResult.flow) {
+      return { ok: false as const, error: "No hay un flujo de reporte activo." };
+    }
+
+    const flow = flowResult.flow;
+
+    if (flow.step !== "CONFIRMACION") {
+      return {
+        ok: false as const,
+        error: `El flujo no está en estado CONFIRMACION (estado actual: ${flow.step}).`,
+      };
+    }
+
+    const slots = flow.slots;
+
+    if (slots["confirmado"] !== true) {
+      return {
+        ok: false as const,
+        error: "El usuario no ha confirmado el reporte (slot 'confirmado' no es true).",
+      };
+    }
+
+    // 2. Extract required fields from slots
+    const categoria = typeof slots["categoria"] === "string" ? slots["categoria"] : "";
+    const tipo = typeof slots["tipo"] === "string" ? slots["tipo"] : "";
+    const descripcion =
+      typeof slots["descripcion"] === "string" ? slots["descripcion"] : "";
+
+    if (!categoria || !tipo || !descripcion) {
+      return {
+        ok: false as const,
+        error: "Faltan datos requeridos: categoria, tipo o descripcion.",
+      };
+    }
+
+    // 3. Parse ubicacion
+    let lat: number | null = null;
+    let lng: number | null = null;
+    let colonia: string | null = null;
+
+    const ubicacion = slots["ubicacion"];
+    if (ubicacion !== null && typeof ubicacion === "object") {
+      const u = ubicacion as Record<string, unknown>;
+      if (typeof u["lat"] === "number" && typeof u["lng"] === "number") {
+        lat = u["lat"];
+        lng = u["lng"];
+        if (typeof u["colonia"] === "string") colonia = u["colonia"];
+      } else if (
+        typeof u["direccion_libre"] === "string" &&
+        typeof u["colonia"] === "string"
+      ) {
+        colonia = u["colonia"];
+      }
+    }
+
+    // 4. Parse photo
+    const rawFoto = slots["foto_url"];
+    const imageUrls: string[] =
+      typeof rawFoto === "string" && rawFoto !== "sin_foto" ? [rawFoto] : [];
+
+    // 5. Determine priority and routing area
+    const urgent = isUrgentCategory(categoria, tipo);
+    const priority = urgent ? 0 : 2;
+    const routingArea = await getRoutingArea(categoria, tipo);
+
+    // 6. Call RPC
+    const rpcResult = await callCrearLead({
+      p_user_id: user_id,
+      p_categoria: categoria,
+      p_tipo: tipo,
+      p_descripcion: descripcion,
+      p_lat: lat,
+      p_lng: lng,
+      p_colonia: colonia,
+      p_image_urls: imageUrls,
+      p_priority: priority,
+      p_assigned_to_area: routingArea ?? null,
+    });
+
+    if (!rpcResult.ok) {
+      return { ok: false as const, error: rpcResult.error };
+    }
+
+    // 7. Clear flow on success
+    await clearFlowState(conversation_id);
+
+    // 8. Attach emergency contacts if urgent
+    if (urgent) {
+      const contacts = await lookupEmergencyContacts("urgente");
+      return {
+        ok: true as const,
+        folio: rpcResult.folio,
+        lead_id: rpcResult.lead_id,
+        urgent_contacts: contacts,
+      };
+    }
+
+    return {
+      ok: true as const,
+      folio: rpcResult.folio,
+      lead_id: rpcResult.lead_id,
+    };
+  },
+});
+
+// ---------------------------------------------------------------------------
+// 5. reporte_cancelar
+// ---------------------------------------------------------------------------
+
+export const reporteCancelar = createTool({
+  id: "reporte_cancelar",
+  description:
+    "Cancela el flujo de reporte activo y libera el estado de la conversación. " +
+    "Úsala cuando el usuario decide no continuar con el reporte.",
+  inputSchema: z.object({
+    conversation_id: z
+      .string()
+      .min(1)
+      .describe("ID de la conversación activa."),
+  }),
+  outputSchema: z.discriminatedUnion("ok", [
+    z.object({ ok: z.literal(true) }),
+    z.object({ ok: z.literal(false), error: z.string() }),
+  ]),
+  execute: async ({ conversation_id }) => {
+    const result = await clearFlowState(conversation_id);
+    if (!result.ok) {
+      return { ok: false as const, error: result.error };
+    }
+    return { ok: true as const };
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Lead row type for queries
+// ---------------------------------------------------------------------------
+
+interface LeadRow {
+  id: string;
+  folio: string;
+  user_id: string;
+  categoria: string;
+  tipo: string;
+  descripcion: string;
+  estado: string;
+  priority: number;
+  created_at: string;
+  updated_at: string;
+  lat: number | null;
+  lng: number | null;
+  colonia: string | null;
+  assigned_to_area: string | null;
+  image_urls: string[] | null;
+}
+
+const LeadSchema = z.object({
+  id: z.string(),
+  folio: z.string(),
+  user_id: z.string(),
+  categoria: z.string(),
+  tipo: z.string(),
+  descripcion: z.string(),
+  estado: z.string(),
+  priority: z.number(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  lat: z.number().nullable(),
+  lng: z.number().nullable(),
+  colonia: z.string().nullable(),
+  assigned_to_area: z.string().nullable(),
+  image_urls: z.array(z.string()).nullable(),
+});
+
+// ---------------------------------------------------------------------------
+// 6. reporte_consultar
+// ---------------------------------------------------------------------------
+
+export const reporteConsultar = createTool({
+  id: "reporte_consultar",
+  description:
+    "Consulta un reporte ciudadano por folio y verifica que pertenece al usuario solicitante. " +
+    "Accede directamente a la tabla 'leads' para mostrar la descripción completa al usuario reportante. " +
+    "Requiere user_id para privacidad — no devuelve reportes de otros usuarios.",
+  inputSchema: z.object({
+    conversation_id: z
+      .string()
+      .min(1)
+      .describe("ID de la conversación activa (para contexto)."),
+    user_id: z
+      .string()
+      .min(1)
+      .describe("ID del usuario que consulta."),
+    folio: z
+      .string()
+      .optional()
+      .describe("Folio del reporte (ej: CUH-20260101-001). Opcional si se omite se busca el más reciente del usuario."),
+  }),
+  outputSchema: z.discriminatedUnion("ok", [
+    z.object({ ok: z.literal(true), lead: LeadSchema }),
+    z.object({ ok: z.literal(false), error: z.string() }),
+  ]),
+  execute: async ({ user_id, folio }) => {
+    let query = supabaseAdmin
+      .from("leads")
+      .select(
+        "id, folio, user_id, categoria, tipo, descripcion, estado, priority, created_at, updated_at, lat, lng, colonia, assigned_to_area, image_urls",
+      )
+      .eq("user_id", user_id);
+
+    if (folio) {
+      query = query.eq("folio", folio);
+    } else {
+      query = query.order("created_at", { ascending: false }).limit(1);
+    }
+
+    const { data, error } = await query.maybeSingle();
+
+    if (error) {
+      return { ok: false as const, error: error.message };
+    }
+
+    if (!data) {
+      return {
+        ok: false as const,
+        error: "not found or unauthorized",
+      };
+    }
+
+    const parsed = LeadSchema.safeParse(data as LeadRow);
+    if (!parsed.success) {
+      return {
+        ok: false as const,
+        error: `Formato inesperado en respuesta: ${parsed.error.message}`,
+      };
+    }
+
+    return { ok: true as const, lead: parsed.data };
+  },
+});
+
+// ---------------------------------------------------------------------------
+// 7. reporte_listar_mios
+// ---------------------------------------------------------------------------
+
+export const reporteListarMios = createTool({
+  id: "reporte_listar_mios",
+  description:
+    "Lista los reportes más recientes del usuario autenticado. " +
+    "Úsala cuando el usuario pregunta '¿qué reportes tengo?', 'mis reportes', '¿en qué estado van mis reportes?', etc.",
+  inputSchema: z.object({
+    user_id: z
+      .string()
+      .min(1)
+      .describe("ID del usuario que consulta."),
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(50)
+      .optional()
+      .describe("Número máximo de reportes a devolver (default 10, máx 50)."),
+  }),
+  outputSchema: z.discriminatedUnion("ok", [
+    z.object({
+      ok: z.literal(true),
+      data: z.array(LeadSchema),
+    }),
+    z.object({ ok: z.literal(false), error: z.string() }),
+  ]),
+  execute: async ({ user_id, limit }) => {
+    const effectiveLimit = limit ?? 10;
+
+    const { data, error } = await supabaseAdmin
+      .from("leads")
+      .select(
+        "id, folio, user_id, categoria, tipo, descripcion, estado, priority, created_at, updated_at, lat, lng, colonia, assigned_to_area, image_urls",
+      )
+      .eq("user_id", user_id)
+      .order("created_at", { ascending: false })
+      .limit(effectiveLimit);
+
+    if (error) {
+      return { ok: false as const, error: error.message };
+    }
+
+    const rows = (data ?? []) as LeadRow[];
+
+    const leads = rows
+      .map((row) => {
+        const parsed = LeadSchema.safeParse(row);
+        return parsed.success ? parsed.data : null;
+      })
+      .filter((lead): lead is z.infer<typeof LeadSchema> => lead !== null);
+
+    return { ok: true as const, data: leads };
+  },
+});
