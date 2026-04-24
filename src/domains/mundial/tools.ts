@@ -54,7 +54,7 @@ export const mundialPartidosBuscar = createTool({
       .string()
       .optional()
       .describe(
-        "Código FIFA de 3 letras (MEX, USA, CAN…) o fragmento de nombre. Ej: 'México', 'ARG'.",
+        "Código FIFA de 3 letras en MAYÚSCULAS. Ej: MEX, ARG, BRA, USA, CAN. NO uses nombres como Mexico/México.",
       ),
     ciudad: z
       .string()
