@@ -118,10 +118,13 @@ export const reporteSlotLlenar = createTool({
         "Clave del slot a llenar, ej: 'categoria', 'tipo', 'descripcion', 'ubicacion', 'fotos', 'confirmado'.",
       ),
     valor: z
-      .unknown()
+      .string()
       .describe(
-        "Valor del slot. Para 'ubicacion' puede ser {lat, lng} o {direccion_libre, colonia}. " +
-        "Para 'confirmado' debe ser un booleano. Para 'fotos' un array de URLs o el string 'sin_foto'.",
+        "Valor del slot como string. Para slots estructurados, pasa JSON.stringify del valor: " +
+        "ubicacion → '{\"lat\":19.43,\"lng\":-99.13}' o '{\"direccion_libre\":\"Av X 100\",\"colonia\":\"Centro\"}'. " +
+        "fotos → '[\"url1\",\"url2\"]' o '\"sin_foto\"'. " +
+        "confirmado → 'true' o 'false'. " +
+        "Otros (categoria, tipo, descripcion) → el string directo.",
       ),
   }),
   outputSchema: z.discriminatedUnion("ok", [
@@ -136,6 +139,27 @@ export const reporteSlotLlenar = createTool({
     }),
   ]),
   execute: async ({ conversation_id, slot, valor }) => {
+    // 0. Decode `valor`: structured slots (ubicacion / fotos / confirmado) come
+    //    as JSON-encoded strings from the LLM; plain text slots stay as-is.
+    let decodedValor: unknown = valor;
+    if (slot === "ubicacion" || slot === "fotos" || slot === "confirmado") {
+      try {
+        decodedValor = JSON.parse(valor);
+      } catch {
+        // If JSON.parse fails for `confirmado`, accept "true"/"false" string forms.
+        if (slot === "confirmado") {
+          decodedValor = valor.toLowerCase() === "true";
+        } else if (slot === "fotos" && valor === "sin_foto") {
+          decodedValor = "sin_foto";
+        } else {
+          return {
+            ok: false as const,
+            error: `valor para slot '${slot}' debe ser JSON válido`,
+          };
+        }
+      }
+    }
+
     // 1. Load current flow
     const flowResult = await getFlowState(conversation_id);
     if (!flowResult.ok) {
@@ -154,12 +178,12 @@ export const reporteSlotLlenar = createTool({
       const slotDef = stateConfig.slots.find((s) => s.key === slot);
       if (slotDef) {
         if (slotDef.asyncValidator) {
-          const validation = await slotDef.asyncValidator(valor);
+          const validation = await slotDef.asyncValidator(decodedValor);
           if (!validation.success) {
             return { ok: false as const, error: validation.error };
           }
         } else if (slotDef.validator) {
-          const parsed = slotDef.validator.safeParse(valor);
+          const parsed = slotDef.validator.safeParse(decodedValor);
           if (!parsed.success) {
             return {
               ok: false as const,
@@ -171,7 +195,7 @@ export const reporteSlotLlenar = createTool({
     }
 
     // 3. Mutate slots and persist
-    const updatedSlots: Record<string, unknown> = { ...flow.slots, [slot]: valor };
+    const updatedSlots: Record<string, unknown> = { ...flow.slots, [slot]: decodedValor };
 
     // 4. Compute next state
     const nextState = transitions(currentState, updatedSlots);

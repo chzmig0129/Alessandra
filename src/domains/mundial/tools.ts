@@ -98,7 +98,7 @@ export const mundialPartidosBuscar = createTool({
       data: z.array(
         z.object({
           id: z.number(),
-          fecha_hora_cdmx: z.string().nullable(),
+          fecha_iso_utc: z.string().nullable().describe("ISO timestamp in UTC. Do NOT show to user — use 'display' field instead."),
           fase: z.string().nullable(),
           grupo: z.string().nullable(),
           equipo_a: z.string(),
@@ -163,7 +163,7 @@ export const mundialPartidosBuscar = createTool({
 
     const rows = data.map((row) => ({
       id: row.id,
-      fecha_hora_cdmx: row.fecha_hora_cdmx,
+      fecha_iso_utc: row.fecha_hora_cdmx,
       fase: row.fase,
       grupo: row.grupo,
       // NEVER infer: if code is null, use desc literally

@@ -323,7 +323,17 @@ export async function fetchPuntosVioleta(
   }
 
   if (filters.colonia) {
-    query = query.ilike("colonia", `%${filters.colonia}%`);
+    // DB stores colonias in non-canonical forms ("ROMA NTE", "DEL VALLE NORTE",
+    // etc.). Tokenise the user input and OR-match each token >= 3 chars so
+    // "Roma Norte" matches "ROMA NTE", "Del Valle" matches "DEL VALLE NORTE", etc.
+    const tokens = filters.colonia
+      .split(/\s+/)
+      .map((t) => t.replace(/[^\p{L}\p{N}]+/gu, ""))
+      .filter((t) => t.length >= 3);
+    if (tokens.length > 0) {
+      const orFilter = tokens.map((t) => `colonia.ilike.%${t}%`).join(",");
+      query = query.or(orFilter);
+    }
   }
 
   if (filters.tipo_atencion) {

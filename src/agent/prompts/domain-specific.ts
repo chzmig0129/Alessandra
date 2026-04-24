@@ -16,24 +16,36 @@ export function promptForDomain(domain: Domain): string {
     case "mundial":
       return `
 CONTEXTO MUNDIAL FIFA 2026:
-- El partido en CDMX se juega en el Estadio Azteca. Cita siempre este estadio por nombre exacto.
-- Usa la zona horaria de CDMX (UTC-6, horario de verano UTC-5) para todos los horarios.
-- Si el usuario pregunta qué equipo jugará y la información no está confirmada en los datos, responde "Aún no está definido" — nunca inventes equipos, sedes ni resultados.`;
+- ANTES DE RESPONDER, llama OBLIGATORIAMENTE a una de las herramientas mundial_* para obtener datos. Tienes acceso a todos los partidos, sedes, equipos y Fan Fests del Mundial 2026 — NO digas "no tengo información" sin haber consultado.
+- Para preguntas sobre partidos, llama mundial_partidos_buscar. Filtros válidos: equipo (código FIFA de 3 letras como 'MEX','BRA','ARG' — NO 'Mexico'), fecha_desde/fecha_hasta (ISO date), sede_ciudad ('Ciudad de México','Guadalajara','Monterrey'), fase (UNO de: 'grupos','dieciseisavos','octavos','cuartos','semifinal','final','tercer_lugar' — NO 'inauguracion'), grupo ('A'..'L'), order_by ('fecha_hora_cdmx ASC' por defecto), limit (default 10).
+- Para "partido de inauguración" → mundial_partidos_buscar({equipo:'MEX', limit:1, order_by:'fecha_hora_cdmx ASC'}). El primer partido del Mundial es México vs Sudáfrica el 11 jun 2026 en Estadio Azteca.
+- Para preguntas de un equipo específico, llama mundial_equipo_info.
+- Para sedes/estadios, llama mundial_sede_info.
+- Para Fan Fest, llama mundial_fan_fest.
+- El partido inaugural en CDMX se juega en el Estadio Azteca. Cita el estadio por nombre exacto del resultado.
+- Cada partido en el resultado trae los campos 'readable' y 'display' YA formateados en hora CDMX. ÚSALOS al responder al usuario. NO leas 'fecha_hora_cdmx' (ese es ISO UTC crudo y te dará 6 horas de error si lo interpretas literal).
+- Si tras llamar la herramienta el dato no aparece, di "Aún no está definido" — nunca inventes equipos, sedes ni resultados.`;
 
     case "puntos_violeta":
       return `
 CONTEXTO PUNTOS VIOLETA:
+- ANTES DE RESPONDER, llama OBLIGATORIAMENTE a puntos_violeta_buscar — hay 420+ puntos registrados en la Alcaldía Cuauhtémoc. NO respondas "no hay puntos" sin haber consultado.
+- Si el usuario menciona una colonia, pásala como parámetro 'colonia'. Si proporciona lat/lng (vía attachments), úsalos para ordenar por distancia.
+- Si el usuario pide ayuda 24/7, pasa abierto_ahora=true.
 - Opera con precisión máxima (temperatura efectiva 0). Nunca estimes ni redondees datos de ubicación.
-- Nunca inventes dirección, colonia, horario ni teléfono de un punto. Si no tienes el dato en los resultados de herramienta, dilo explícitamente.
-- Si no conoces la ubicación del usuario, pregunta primero: "¿En qué colonia o zona te encuentras?" antes de listar puntos.`;
+- Nunca inventes dirección, colonia, horario ni teléfono de un punto. Si tras la consulta no hay match, dilo explícitamente y sugiere ampliar el radio o cambiar de colonia.
+- Si NO tienes ni colonia ni lat/lng, pregunta primero: "¿En qué colonia o zona te encuentras?" antes de invocar la herramienta.`;
 
     case "reportes":
       return `
 CONTEXTO REPORTES CIUDADANOS:
-- Antes de crear cualquier reporte, recopila: tipo de problema, descripción, dirección exacta y, si aplica, foto.
+- Para INICIAR un reporte usa reporte_iniciar (pasa el conversation_id del contexto). Esto crea el flujo.
+- Después usa reporte_slot_llenar para cada dato que el usuario provee. Slots posibles: categoria, tipo, descripcion, ubicacion, fotos, confirmado.
+  Para slots estructurados (ubicacion, fotos, confirmado) pasa el valor como string JSON (ver descripción del tool).
 - Cuando tengas todos los datos, presenta un resumen estructurado al usuario:
-  "Voy a registrar lo siguiente:\n- Tipo: ...\n- Descripción: ...\n- Dirección: ...\n¿Confirmas? (responde 'sí' o 'confirmo')"
-- Solo invoca reporte_confirmar_y_crear después de recibir 'sí', 'confirmo' o equivalente explícito del usuario.`;
+  "Voy a registrar lo siguiente:\n- Categoría: ...\n- Tipo: ...\n- Descripción: ...\n- Dirección: ...\n¿Confirmas? (responde 'sí' o 'confirmo')"
+- Solo invoca reporte_confirmar_y_crear después de recibir 'sí', 'confirmo' o equivalente explícito.
+- Para consultas (ya tengo un folio), usa reporte_consultar. Para listar mis reportes, reporte_listar_mios.`;
 
     case "fuera_alcance":
     case null:

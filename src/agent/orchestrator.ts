@@ -295,10 +295,10 @@ export async function processTurn(
   let agentResult: any;
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    agentResult = await alessandraAgent.generate(messagesForAgent as any, {
+    agentResult = await alessandraAgent.generateLegacy(messagesForAgent as any, {
       instructions: fullSystemPrompt,
       maxSteps: 5,
-      modelSettings: { temperature },
+      temperature,
     });
   } catch (err) {
     console.error("[orchestrator] agent.generate failed:", err);
@@ -306,16 +306,29 @@ export async function processTurn(
   }
 
   const rawText: string = typeof agentResult.text === "string" ? agentResult.text : "";
+  // Mastra's GenerateTextResult exposes top-level toolCalls/toolResults only for
+  // the LAST step. To get every tool invocation across multi-step runs, walk
+  // `steps[]` (each step has its own toolCalls/toolResults arrays).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const toolCalls: unknown[] = Array.isArray(agentResult.toolCalls) ? agentResult.toolCalls : [];
+  const allSteps: any[] = Array.isArray(agentResult.steps) ? agentResult.steps : [];
+  const toolCalls: unknown[] =
+    allSteps.length > 0
+      ? allSteps.flatMap((s) => (Array.isArray(s.toolCalls) ? s.toolCalls : []))
+      : Array.isArray(agentResult.toolCalls)
+        ? agentResult.toolCalls
+        : [];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const usage: any = agentResult.usage ?? null;
 
   // ---- 8. Post-LLM citation check with one retry ---------------------------
 
-  // Collect tool outputs for citation verification.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const toolResults: unknown[] = Array.isArray(agentResult.toolResults) ? agentResult.toolResults : [];
+  // Collect tool outputs across all steps for citation verification.
+  const toolResults: unknown[] =
+    allSteps.length > 0
+      ? allSteps.flatMap((s) => (Array.isArray(s.toolResults) ? s.toolResults : []))
+      : Array.isArray(agentResult.toolResults)
+        ? agentResult.toolResults
+        : [];
 
   let finalText = rawText;
 
@@ -324,7 +337,7 @@ export async function processTurn(
     // One retry with a stricter prompt
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const retryResult: any = await alessandraAgent.generate(
+      const retryResult: any = await alessandraAgent.generateLegacy(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         [
           ...messagesForAgent,
@@ -334,7 +347,7 @@ export async function processTurn(
         {
           instructions: fullSystemPrompt,
           maxSteps: 1,
-          modelSettings: { temperature },
+          temperature,
         },
       );
 
