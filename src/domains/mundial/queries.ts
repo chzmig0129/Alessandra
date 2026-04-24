@@ -181,6 +181,16 @@ function clampLimit(n: number | undefined): number {
 }
 
 /**
+ * Strip Unicode diacritics (accents) from a string.
+ * "México" → "Mexico", "Çeçya" → "Cecya", etc.
+ * Uses NFD decomposition so each accented letter is split into base + combining
+ * mark, then the combining marks (Unicode category M) are removed.
+ */
+function stripAccents(s: string): string {
+  return s.normalize("NFD").replace(/\p{Diacritic}/gu, "");
+}
+
+/**
  * Map a raw view row to PartidoRow, populating deprecated aliases from real cols.
  * The view exposes sede_nombre/goles_local/goles_visitante; we alias back to
  * sede_estadio/marcador_a/marcador_b so existing consumers (tools.ts, formatters.ts)
@@ -267,13 +277,32 @@ export async function fetchPartidos(
 
   if (filters.equipo) {
     const eq = filters.equipo.toUpperCase();
+    // Also build an accent-stripped variant so that "México" matches "Mexico"
+    // and vice-versa. ILIKE in Postgres is NOT accent-insensitive, so we include
+    // both the original and the stripped form in the OR clauses.
+    const eqStripped = stripAccents(filters.equipo);
+    const needsStrippedVariant = eqStripped !== filters.equipo;
+
+    // Build the name/desc ILIKE clauses. Always include the original; add the
+    // stripped variant only when it differs (avoids duplicating clauses).
+    const nameClauses =
+      `equipo_a_nombre.ilike.%${filters.equipo}%,equipo_b_nombre.ilike.%${filters.equipo}%,` +
+      `equipo_a_desc.ilike.%${filters.equipo}%,equipo_b_desc.ilike.%${filters.equipo}%` +
+      (needsStrippedVariant
+        ? `,equipo_a_nombre.ilike.%${eqStripped}%,equipo_b_nombre.ilike.%${eqStripped}%,` +
+          `equipo_a_desc.ilike.%${eqStripped}%,equipo_b_desc.ilike.%${eqStripped}%`
+        : "");
+
+    // Also try the 3-letter code with the stripped input (e.g. "MéX" → "MEX").
+    const eqStrippedUpper = stripAccents(eq);
+    const codeClauses =
+      eqStrippedUpper !== eq
+        ? `equipo_a_codigo.eq.${eq},equipo_b_codigo.eq.${eq},` +
+          `equipo_a_codigo.eq.${eqStrippedUpper},equipo_b_codigo.eq.${eqStrippedUpper}`
+        : `equipo_a_codigo.eq.${eq},equipo_b_codigo.eq.${eq}`;
+
     // Match either local OR visitante (code or name).
-    // Using .or() per spec: equipo filter must match equipo_a_codigo OR equipo_b_codigo.
-    query = query.or(
-      `equipo_a_codigo.eq.${eq},equipo_b_codigo.eq.${eq},` +
-        `equipo_a_nombre.ilike.%${filters.equipo}%,equipo_b_nombre.ilike.%${filters.equipo}%,` +
-        `equipo_a_desc.ilike.%${filters.equipo}%,equipo_b_desc.ilike.%${filters.equipo}%`,
-    );
+    query = query.or(`${codeClauses},${nameClauses}`);
   }
 
   // Default order: fecha_hora_cdmx ASC
