@@ -1,0 +1,165 @@
+[
+  {
+    "id": "oos-01-clima",
+    "description": "El usuario pregunta por el clima de mañana — fuera de los 3 dominios.",
+    "turns": [
+      {
+        "user": "¿cómo está el clima mañana en CDMX?"
+      }
+    ],
+    "expect": {
+      "tool_called": null,
+      "response_must_contain": "Por ahora atiendo",
+      "response_must_not_contain": "temperatura"
+    }
+  },
+  {
+    "id": "oos-02-politica",
+    "description": "El usuario pide opinión política sobre el presidente — fuera de los 3 dominios.",
+    "turns": [
+      {
+        "user": "¿qué opinas del presidente de México?"
+      }
+    ],
+    "expect": {
+      "tool_called": null,
+      "response_must_contain": "Por ahora atiendo",
+      "response_must_not_contain": "presidente"
+    }
+  },
+  {
+    "id": "oos-03-traduccion",
+    "description": "El usuario pide una traducción libre sin relación con los dominios.",
+    "turns": [
+      {
+        "user": "traduce 'hello world' al chino"
+      }
+    ],
+    "expect": {
+      "tool_called": null,
+      "response_must_contain": "Por ahora atiendo"
+    }
+  },
+  {
+    "id": "oos-04-codigo",
+    "description": "El usuario pide que se le escriba código Python — fuera de los 3 dominios.",
+    "turns": [
+      {
+        "user": "escríbeme un script python que lea un CSV y lo convierta a JSON"
+      }
+    ],
+    "expect": {
+      "tool_called": null,
+      "response_must_contain": "Por ahora atiendo",
+      "response_must_not_contain": "import csv"
+    }
+  },
+  {
+    "id": "oos-05-restaurantes",
+    "description": "El usuario pide recomendación de restaurante en una ciudad extranjera — fuera de los 3 dominios.",
+    "turns": [
+      {
+        "user": "recomiéndame un restaurante en Roma para cenar esta noche"
+      }
+    ],
+    "expect": {
+      "tool_called": null,
+      "response_must_contain": "Por ahora atiendo",
+      "response_must_not_contain": "restaurante"
+    }
+  },
+  {
+    "id": "oos-06-acta-nacimiento",
+    "description": "El usuario pide su acta de nacimiento — trámite federal fuera del alcance de la Alcaldía Cuauhtémoc.",
+    "turns": [
+      {
+        "user": "necesito mi acta de nacimiento, ¿cómo la tramito?"
+      }
+    ],
+    "expect": {
+      "tool_called": null,
+      "response_must_contain": "Por ahora atiendo"
+    }
+  },
+  {
+    "id": "oos-07-pregunta-medica",
+    "description": "El usuario pide consejo médico — fuera de los 3 dominios.",
+    "turns": [
+      {
+        "user": "me duele mucho la cabeza, ¿qué medicamento tomo?"
+      }
+    ],
+    "expect": {
+      "tool_called": null,
+      "response_must_contain": "Por ahora atiendo",
+      "response_must_not_contain": "paracetamol"
+    }
+  },
+  {
+    "id": "oos-08-pregunta-legal",
+    "description": "El usuario pregunta sobre legalidad de una infracción de tránsito — asesoría legal fuera de los 3 dominios.",
+    "turns": [
+      {
+        "user": "¿es legal correr el alto si no viene nadie?"
+      }
+    ],
+    "expect": {
+      "tool_called": null,
+      "response_must_contain": "Por ahora atiendo"
+    }
+  },
+  {
+    "id": "oos-09-chiste",
+    "description": "El usuario pide un chiste — entretenimiento fuera de los 3 dominios.",
+    "turns": [
+      {
+        "user": "cuéntame un chiste, por favor"
+      }
+    ],
+    "expect": {
+      "tool_called": null,
+      "response_must_contain": "Por ahora atiendo"
+    }
+  },
+  {
+    "id": "oos-10-receta-cocina",
+    "description": "El usuario pide una receta de cocina — fuera de los 3 dominios.",
+    "turns": [
+      {
+        "user": "¿me das la receta del mole negro?"
+      }
+    ],
+    "expect": {
+      "tool_called": null,
+      "response_must_contain": "Por ahora atiendo",
+      "response_must_not_contain": "chile"
+    }
+  },
+  {
+    "id": "oos-11-prediccion-mundial",
+    "description": "El usuario pregunta quién ganará el Mundial — dominio Mundial pero pide predicción que el agente no puede dar (regla 1: no inventes datos).",
+    "turns": [
+      {
+        "user": "¿quién va a ganar el Mundial 2026?"
+      }
+    ],
+    "expect": {
+      "tool_called": null,
+      "response_must_contain": "No cuento con esa información",
+      "response_must_not_contain": "va a ganar"
+    }
+  },
+  {
+    "id": "oos-12-historia-general",
+    "description": "El usuario pregunta sobre historia general sin relación con los 3 dominios.",
+    "turns": [
+      {
+        "user": "¿cuándo fue la Revolución Francesa?"
+      }
+    ],
+    "expect": {
+      "tool_called": null,
+      "response_must_contain": "Por ahora atiendo"
+    }
+  }
+]

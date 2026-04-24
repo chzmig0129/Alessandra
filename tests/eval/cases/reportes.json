@@ -1,0 +1,522 @@
+[
+  {
+    "id": "RPT-001",
+    "description": "Reporte de bache — flujo completo de 5 turnos hasta folio CUH-",
+    "domain": "reportes",
+    "turns": [
+      {
+        "user": "quiero reportar un bache"
+      },
+      {
+        "user": "bache"
+      },
+      {
+        "user": "está en Av. Cuauhtémoc 100, colonia Roma Norte"
+      },
+      {
+        "user": "hay un hoyo enorme desde hace dos semanas, peligroso para ciclistas, sin foto"
+      },
+      {
+        "user": "sí confirmo"
+      }
+    ],
+    "expect": {
+      "tool_called": "reporte_confirmar_y_crear",
+      "response_must_contain": ["CUH-"]
+    }
+  },
+  {
+    "id": "RPT-002",
+    "description": "Reporte de alumbrado roto en Roma con foto adjunta en turn 1 — usa reporte_analizar_imagen",
+    "domain": "reportes",
+    "turns": [
+      {
+        "user": "hay un foco quemado en Roma Norte, aquí la foto",
+        "attachments": [
+          {
+            "type": "image",
+            "url": "https://example.com/foto-alumbrado.jpg"
+          }
+        ]
+      },
+      {
+        "user": "alumbrado"
+      },
+      {
+        "user": "foco fundido en poste"
+      },
+      {
+        "user": "Calle Orizaba 45, colonia Roma Norte"
+      },
+      {
+        "user": "el foco lleva más de 10 días fundido, pone en riesgo a los peatones de noche"
+      },
+      {
+        "user": "sí"
+      }
+    ],
+    "expect": {
+      "tool_called": "reporte_analizar_imagen",
+      "response_must_contain": ["CUH-"]
+    }
+  },
+  {
+    "id": "RPT-003",
+    "description": "Reporte de basura acumulada — usuario cancela a mitad del flujo",
+    "domain": "reportes",
+    "turns": [
+      {
+        "user": "quiero reportar basura acumulada en mi calle"
+      },
+      {
+        "user": "basura"
+      },
+      {
+        "user": "ya no, mejor luego"
+      }
+    ],
+    "expect": {
+      "tool_called": "reporte_cancelar",
+      "response_must_contain": ["cancel"]
+    }
+  },
+  {
+    "id": "RPT-004",
+    "description": "Fuga de gas — URGENTE: debe devolver folio CUH- + contactos de emergencia + mención de 911 y gas",
+    "domain": "reportes",
+    "urgent": true,
+    "turns": [
+      {
+        "user": "hay una fuga de gas en mi colonia, huele muy fuerte"
+      },
+      {
+        "user": "gas"
+      },
+      {
+        "user": "fuga_gas"
+      },
+      {
+        "user": "Av. Insurgentes Sur 200, colonia del Valle"
+      },
+      {
+        "user": "olor intenso a gas desde hace 20 minutos, posible fuga en tubería subterránea, sin foto"
+      },
+      {
+        "user": "sí confirmo"
+      }
+    ],
+    "expect": {
+      "tool_called": "reporte_confirmar_y_crear",
+      "response_must_contain": ["CUH-", "911", "gas"]
+    }
+  },
+  {
+    "id": "RPT-005",
+    "description": "Consultar estado de reporte existente por folio CUH-20260424-001",
+    "domain": "reportes",
+    "turns": [
+      {
+        "user": "¿Cómo va mi reporte CUH-20260424-001?"
+      }
+    ],
+    "expect": {
+      "tool_called": "reporte_consultar",
+      "response_must_contain": ["CUH-20260424-001"]
+    }
+  },
+  {
+    "id": "RPT-006",
+    "description": "Listar mis reportes recientes",
+    "domain": "reportes",
+    "turns": [
+      {
+        "user": "lista mis reportes"
+      }
+    ],
+    "expect": {
+      "tool_called": "reporte_listar_mios",
+      "response_must_contain": ["reporte"]
+    }
+  },
+  {
+    "id": "RPT-007",
+    "description": "Categoría inválida — usuario escribe 'dragón', agente pide categoría válida",
+    "domain": "reportes",
+    "turns": [
+      {
+        "user": "quiero reportar un dragón en mi colonia"
+      },
+      {
+        "user": "dragón"
+      }
+    ],
+    "expect": {
+      "tool_called": "reporte_iniciar",
+      "response_must_contain": ["categoría"],
+      "response_must_not_contain": ["CUH-"]
+    }
+  },
+  {
+    "id": "RPT-008",
+    "description": "Reporte de árbol caído — URGENTE — flujo completo",
+    "domain": "reportes",
+    "urgent": true,
+    "turns": [
+      {
+        "user": "se cayó un árbol y está bloqueando la calle"
+      },
+      {
+        "user": "arboles"
+      },
+      {
+        "user": "arbol_caido"
+      },
+      {
+        "user": "Calle Sonora 35, colonia Hipódromo Condesa"
+      },
+      {
+        "user": "árbol grande cayó esta mañana bloqueando completamente la calle, sin foto"
+      },
+      {
+        "user": "sí confirmo"
+      }
+    ],
+    "expect": {
+      "tool_called": "reporte_confirmar_y_crear",
+      "response_must_contain": ["CUH-", "urgente"]
+    }
+  },
+  {
+    "id": "RPT-009",
+    "description": "Reporte de cable vivo — URGENTE — flujo completo con contactos de emergencia",
+    "domain": "reportes",
+    "urgent": true,
+    "turns": [
+      {
+        "user": "hay un cable vivo colgando en la banqueta, es peligroso"
+      },
+      {
+        "user": "electricidad"
+      },
+      {
+        "user": "cable_vivo"
+      },
+      {
+        "user": "Av. Álvaro Obregón 180, colonia Roma Sur"
+      },
+      {
+        "user": "cable de alta tensión colgando desde ayer, casi toca el suelo, sin foto"
+      },
+      {
+        "user": "sí"
+      }
+    ],
+    "expect": {
+      "tool_called": "reporte_confirmar_y_crear",
+      "response_must_contain": ["CUH-", "urgente"]
+    }
+  },
+  {
+    "id": "RPT-010",
+    "description": "Reporte de alumbrado total de colonia apagado — URGENTE",
+    "domain": "reportes",
+    "urgent": true,
+    "turns": [
+      {
+        "user": "toda la colonia Doctores está sin luz desde anoche"
+      },
+      {
+        "user": "alumbrado"
+      },
+      {
+        "user": "alumbrado_total_colonia"
+      },
+      {
+        "user": "Colonia Doctores, alcaldía Cuauhtémoc"
+      },
+      {
+        "user": "toda la colonia sin alumbrado público desde las 22:00 de ayer, sin foto"
+      },
+      {
+        "user": "confirmo"
+      }
+    ],
+    "expect": {
+      "tool_called": "reporte_confirmar_y_crear",
+      "response_must_contain": ["CUH-", "urgente"]
+    }
+  },
+  {
+    "id": "RPT-011",
+    "description": "Multi-turn con cambio de opinión — usuario corrige la ubicación a mitad",
+    "domain": "reportes",
+    "turns": [
+      {
+        "user": "quiero reportar un bache"
+      },
+      {
+        "user": "bache"
+      },
+      {
+        "user": "bache en calle principal"
+      },
+      {
+        "user": "Av. Insurgentes Norte 400, colonia Guerrero"
+      },
+      {
+        "user": "espera, me equivoqué de calle, es Av. Insurgentes Norte 500, colonia Santa María la Ribera"
+      },
+      {
+        "user": "bache muy profundo con más de 40 cm de diámetro, lleva 3 semanas, sin foto"
+      },
+      {
+        "user": "sí confirmo"
+      }
+    ],
+    "expect": {
+      "tool_called": "reporte_confirmar_y_crear",
+      "response_must_contain": ["CUH-", "Santa María la Ribera"]
+    }
+  },
+  {
+    "id": "RPT-012",
+    "description": "Reporte sin foto — usuario declara explícitamente 'sin foto'",
+    "domain": "reportes",
+    "turns": [
+      {
+        "user": "quiero reportar daño en banqueta"
+      },
+      {
+        "user": "banquetas"
+      },
+      {
+        "user": "banqueta dañada"
+      },
+      {
+        "user": "Calle Colima 120, colonia Roma Norte"
+      },
+      {
+        "user": "banqueta rota con losa levantada que impide el paso de sillas de ruedas"
+      },
+      {
+        "user": "sin foto"
+      },
+      {
+        "user": "sí"
+      }
+    ],
+    "expect": {
+      "tool_called": "reporte_confirmar_y_crear",
+      "response_must_contain": ["CUH-"]
+    }
+  },
+  {
+    "id": "RPT-013",
+    "description": "Tipo válido pero descripción vacía — agente debe pedir descripción",
+    "domain": "reportes",
+    "turns": [
+      {
+        "user": "reportar bache"
+      },
+      {
+        "user": "bache"
+      },
+      {
+        "user": "bache en calle secundaria"
+      },
+      {
+        "user": "Calle Mérida 80, colonia Roma Norte"
+      },
+      {
+        "user": ""
+      }
+    ],
+    "expect": {
+      "response_must_contain": ["descripción", "detalle"],
+      "response_must_not_contain": ["CUH-"]
+    }
+  },
+  {
+    "id": "RPT-014",
+    "description": "English speaker — 'I want to report a pothole' — multi-turn en inglés",
+    "domain": "reportes",
+    "turns": [
+      {
+        "user": "I want to report a pothole on my street"
+      },
+      {
+        "user": "bache"
+      },
+      {
+        "user": "pothole on main road"
+      },
+      {
+        "user": "Av. Cuauhtémoc 300, colonia Doctores"
+      },
+      {
+        "user": "Large pothole about 50 cm wide near the intersection, has been there for a month, no photo"
+      },
+      {
+        "user": "yes, I confirm"
+      }
+    ],
+    "expect": {
+      "tool_called": "reporte_confirmar_y_crear",
+      "response_must_contain": ["CUH-"]
+    }
+  },
+  {
+    "id": "RPT-015",
+    "description": "Confirmación parcial — usuario pide cambiar dirección antes de confirmar",
+    "domain": "reportes",
+    "turns": [
+      {
+        "user": "quiero reportar luminaria fundida"
+      },
+      {
+        "user": "alumbrado"
+      },
+      {
+        "user": "foco fundido en poste"
+      },
+      {
+        "user": "Calle Veracruz 55, colonia Condesa"
+      },
+      {
+        "user": "el poste número 47 lleva 5 días sin luz, afecta seguridad nocturna, sin foto"
+      },
+      {
+        "user": "casi, cambia la dirección a Calle Veracruz 75, colonia Condesa"
+      },
+      {
+        "user": "sí confirmo"
+      }
+    ],
+    "expect": {
+      "tool_called": "reporte_confirmar_y_crear",
+      "response_must_contain": ["CUH-", "Veracruz 75"]
+    }
+  },
+  {
+    "id": "RPT-016",
+    "description": "Usuario pregunta por mis reportes con variante '¿en qué estado van?'",
+    "domain": "reportes",
+    "turns": [
+      {
+        "user": "¿en qué estado van mis reportes?"
+      }
+    ],
+    "expect": {
+      "tool_called": "reporte_listar_mios",
+      "response_must_contain": ["reporte"]
+    }
+  },
+  {
+    "id": "RPT-017",
+    "description": "Reporte de fuga de agua — flujo normal completo",
+    "domain": "reportes",
+    "turns": [
+      {
+        "user": "hay una fuga de agua en la calle"
+      },
+      {
+        "user": "agua"
+      },
+      {
+        "user": "fuga de agua en vía pública"
+      },
+      {
+        "user": "Calle Jalapa 200, colonia Roma Norte"
+      },
+      {
+        "user": "fuga visible en el asfalto con agua corriendo hacia la alcantarilla desde hace 2 días, sin foto"
+      },
+      {
+        "user": "sí"
+      }
+    ],
+    "expect": {
+      "tool_called": "reporte_confirmar_y_crear",
+      "response_must_contain": ["CUH-"]
+    }
+  },
+  {
+    "id": "RPT-018",
+    "description": "Consulta de reporte sin folio — busca el más reciente del usuario",
+    "domain": "reportes",
+    "turns": [
+      {
+        "user": "¿cuál es el estado de mi último reporte?"
+      }
+    ],
+    "expect": {
+      "tool_called": "reporte_consultar",
+      "response_must_contain": ["reporte"]
+    }
+  },
+  {
+    "id": "RPT-019",
+    "description": "Reporte de parque descuidado — flujo completo con foto",
+    "domain": "reportes",
+    "turns": [
+      {
+        "user": "el parque de mi colonia está muy descuidado, quiero reportarlo"
+      },
+      {
+        "user": "parques"
+      },
+      {
+        "user": "mantenimiento de parque"
+      },
+      {
+        "user": "Parque México, colonia Condesa"
+      },
+      {
+        "user": "áreas verdes sin mantenimiento, juegos rotos y basura acumulada",
+        "attachments": [
+          {
+            "type": "image",
+            "url": "https://example.com/parque-descuido.jpg"
+          }
+        ]
+      },
+      {
+        "user": "sí confirmo"
+      }
+    ],
+    "expect": {
+      "tool_called": "reporte_confirmar_y_crear",
+      "response_must_contain": ["CUH-"]
+    }
+  },
+  {
+    "id": "RPT-020",
+    "description": "Reporte abandonado por el usuario — no confirma y dice 'no'",
+    "domain": "reportes",
+    "turns": [
+      {
+        "user": "reportar bache en mi calle"
+      },
+      {
+        "user": "bache"
+      },
+      {
+        "user": "bache en calle principal"
+      },
+      {
+        "user": "Calle Durango 100, colonia Roma Norte"
+      },
+      {
+        "user": "bache mediano con grietas alrededor, lleva 1 semana, sin foto"
+      },
+      {
+        "user": "no confirmo, quiero cancelar"
+      }
+    ],
+    "expect": {
+      "tool_called": "reporte_cancelar",
+      "response_must_contain": ["cancel"],
+      "response_must_not_contain": ["CUH-"]
+    }
+  }
+]

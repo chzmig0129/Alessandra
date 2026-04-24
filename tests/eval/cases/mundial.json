@@ -1,0 +1,233 @@
+[
+  {
+    "id": "mundial-001",
+    "description": "México partido inaugural: el usuario pregunta por el primer partido de México en el Mundial 2026 contra Sudáfrica en el Estadio Azteca.",
+    "turns": [
+      { "user": "¿Cuándo juega México en el Mundial? ¿Es cierto que abren el torneo en el Azteca?" }
+    ],
+    "expect": {
+      "tool_called": "mundial_partidos_buscar",
+      "input_contains": { "equipo": "MEX" },
+      "response_must_contain": ["Azteca", "2026"],
+      "judge_rubric": "Evalúa que la respuesta mencione la fecha correcta (11 de junio de 2026) y el Estadio Azteca como sede del primer partido de México."
+    }
+  },
+  {
+    "id": "mundial-002",
+    "description": "Sedes en CDMX: el usuario pregunta qué partidos se juegan en Ciudad de México.",
+    "turns": [
+      { "user": "¿Qué partidos del Mundial se van a jugar en la Ciudad de México?" }
+    ],
+    "expect": {
+      "tool_called": "mundial_partidos_buscar",
+      "input_contains": { "ciudad": "Ciudad de México" },
+      "response_must_contain": ["Ciudad de México", "2026"],
+      "response_must_not_contain": ["Guadalajara", "Monterrey"]
+    }
+  },
+  {
+    "id": "mundial-003",
+    "description": "Sedes en Guadalajara: el usuario pregunta por partidos en Guadalajara.",
+    "turns": [
+      { "user": "¿Cuáles son los partidos que se juegan en Guadalajara durante el Mundial 2026?" }
+    ],
+    "expect": {
+      "tool_called": "mundial_partidos_buscar",
+      "input_contains": { "ciudad": "Guadalajara" },
+      "response_must_contain": ["Guadalajara", "2026"],
+      "judge_rubric": "Evalúa que la respuesta liste partidos con sede en Guadalajara (Zapopan) y mencione fechas correctas."
+    }
+  },
+  {
+    "id": "mundial-004",
+    "description": "Sedes en Monterrey: el usuario pregunta por partidos en Monterrey.",
+    "turns": [
+      { "user": "¿Hay partidos del Mundial en Monterrey? ¿Cuáles?" }
+    ],
+    "expect": {
+      "tool_called": "mundial_partidos_buscar",
+      "input_contains": { "ciudad": "Monterrey" },
+      "response_must_contain": ["Monterrey", "2026"],
+      "judge_rubric": "Evalúa que la respuesta mencione partidos con sede en Monterrey (Guadalupe) y sus fechas."
+    }
+  },
+  {
+    "id": "mundial-005",
+    "description": "Fan Fest CDMX: el usuario pregunta por el Fan Festival en Ciudad de México.",
+    "turns": [
+      { "user": "¿Dónde es el Fan Fest del Mundial en la CDMX? ¿Cuándo abre?" }
+    ],
+    "expect": {
+      "tool_called": "mundial_fan_fest",
+      "input_contains": { "ciudad": "Ciudad de México" },
+      "response_must_contain": ["Zócalo", "junio"],
+      "judge_rubric": "Evalúa que la respuesta mencione el Zócalo de la Ciudad de México como sede del Fan Festival y las fechas de operación (11 de junio al 19 de julio)."
+    }
+  },
+  {
+    "id": "mundial-006",
+    "description": "Fan Fest Guadalajara horario y ubicación.",
+    "turns": [
+      { "user": "¿Cómo llego al Fan Fest de Guadalajara? ¿Qué días abre?" }
+    ],
+    "expect": {
+      "tool_called": "mundial_fan_fest",
+      "input_contains": { "ciudad": "Guadalajara" },
+      "response_must_contain": ["Guadalajara", "Plaza Liberación"],
+      "judge_rubric": "Evalúa que la respuesta mencione la Plaza Liberación entre la Catedral y el Teatro Degollado como sede del Fan Festival de Guadalajara."
+    }
+  },
+  {
+    "id": "mundial-007",
+    "description": "Fan Fest Monterrey: el usuario pregunta por el Fan Festival en Monterrey.",
+    "turns": [
+      { "user": "¿Hay Fan Fest en Monterrey? ¿Dónde es?" }
+    ],
+    "expect": {
+      "tool_called": "mundial_fan_fest",
+      "input_contains": { "ciudad": "Monterrey" },
+      "response_must_contain": ["Fundidora", "Monterrey"],
+      "judge_rubric": "Evalúa que la respuesta mencione el Parque Fundidora como sede del Fan Festival de Monterrey."
+    }
+  },
+  {
+    "id": "mundial-008",
+    "description": "Detalle de partido con eventos: el usuario pide detalles completos de un partido específico por ID.",
+    "turns": [
+      { "user": "Dame los detalles completos del partido con ID 1, con los goles y alineaciones." }
+    ],
+    "expect": {
+      "tool_called": "mundial_partido_detalle",
+      "input_contains": { "partido_id": 1 },
+      "response_must_contain": ["partido", "2026"],
+      "judge_rubric": "Evalúa que la respuesta incluya información del partido como equipos, sede, y si hay eventos o alineaciones disponibles los mencione."
+    }
+  },
+  {
+    "id": "mundial-009",
+    "description": "Información del equipo México: rank FIFA y próximo partido.",
+    "turns": [
+      { "user": "¿En qué posición está México en el ranking FIFA y cuándo es su próximo partido?" }
+    ],
+    "expect": {
+      "tool_called": "mundial_equipo_info",
+      "input_contains": { "equipo": "MEX" },
+      "response_must_contain": ["México", "ranking"],
+      "judge_rubric": "Evalúa que la respuesta mencione el ranking FIFA de México (posición 19) y su próximo partido programado con fecha y sede correctas."
+    }
+  },
+  {
+    "id": "mundial-010",
+    "description": "Búsqueda por confederación CONCACAF: el usuario quiere ver todos los partidos de equipos CONCACAF.",
+    "turns": [
+      { "user": "¿Qué equipos de la CONCACAF están en el Mundial 2026 y cuándo juegan?" }
+    ],
+    "expect": {
+      "tool_called": "mundial_equipo_info",
+      "response_must_contain": ["CONCACAF"],
+      "judge_rubric": "Evalúa que la respuesta mencione equipos de la CONCACAF (México, Canadá, USA, Haití) con sus partidos. Al menos dos equipos deben aparecer con fechas."
+    }
+  },
+  {
+    "id": "mundial-011",
+    "description": "Búsqueda por confederación CONMEBOL: el usuario pregunta por equipos sudamericanos.",
+    "turns": [
+      { "user": "¿Cuáles equipos de Sudamérica van al Mundial? ¿Cómo les fue en el ranking FIFA?" }
+    ],
+    "expect": {
+      "tool_called": "mundial_equipo_info",
+      "response_must_contain": ["CONMEBOL"],
+      "judge_rubric": "Evalúa que la respuesta mencione equipos de CONMEBOL como Brasil, Argentina o Uruguay con sus respectivos rankings FIFA."
+    }
+  },
+  {
+    "id": "mundial-012",
+    "description": "Búsqueda por confederación UEFA: el usuario pregunta por equipos europeos en el Mundial.",
+    "turns": [
+      { "user": "¿Cuántos equipos europeos van al Mundial 2026? Dime algunos con su grupo." }
+    ],
+    "expect": {
+      "tool_called": "mundial_partidos_buscar",
+      "response_must_contain": ["UEFA"],
+      "judge_rubric": "Evalúa que la respuesta identifique equipos europeos (UEFA) en el Mundial 2026 y mencione al menos uno con su grupo asignado."
+    }
+  },
+  {
+    "id": "mundial-013",
+    "description": "Caso ambiguo: el usuario expresa interés de ver fútbol el sábado sin especificar equipo, partido ni sede. Alessandra debe pedir clarificación.",
+    "turns": [
+      { "user": "Quiero ver fútbol el sábado." }
+    ],
+    "expect": {
+      "response_must_contain": ["?"],
+      "response_must_not_contain": ["Error", "no encontrado"],
+      "judge_rubric": "Evalúa que Alessandra responda con una pregunta de clarificación amigable (¿qué equipo?, ¿en qué sede?, ¿en el estadio o en el Fan Fest?) sin asumir información no proporcionada."
+    }
+  },
+  {
+    "id": "mundial-014",
+    "description": "Multi-turno: el usuario pregunta primero por México, luego pide el siguiente partido sin repetir el equipo. Alessandra debe reutilizar el contexto.",
+    "turns": [
+      { "user": "¿Cuándo juega México en el Mundial?" },
+      { "user": "¿Y el siguiente partido?" }
+    ],
+    "expect": {
+      "tool_called": "mundial_partidos_buscar",
+      "input_contains": { "equipo": "MEX" },
+      "response_must_contain": ["México", "2026"],
+      "judge_rubric": "Evalúa que en el segundo turno Alessandra infiera correctamente que 'el siguiente partido' se refiere a México (contexto del turno anterior) y devuelva el segundo partido de México con fecha y sede correctas."
+    }
+  },
+  {
+    "id": "mundial-015",
+    "description": "Ranking FIFA de Brasil: el usuario pregunta directamente qué lugar tiene Brasil en el ranking FIFA.",
+    "turns": [
+      { "user": "¿Qué lugar tiene Brasil en el ranking FIFA?" }
+    ],
+    "expect": {
+      "tool_called": "mundial_equipo_info",
+      "input_contains": { "equipo": "BRA" },
+      "response_must_contain": ["Brasil", "5"],
+      "judge_rubric": "Evalúa que la respuesta indique que Brasil ocupa la posición 5 en el ranking FIFA mundial (según datos 2024 semestre 2) con 1775.85 puntos."
+    }
+  },
+  {
+    "id": "mundial-016",
+    "description": "Sede info Estadio Azteca: el usuario pregunta cómo llegar al Estadio Azteca.",
+    "turns": [
+      { "user": "¿Cómo llego al Estadio Azteca desde el metro? ¿Cuál es la dirección?" }
+    ],
+    "expect": {
+      "tool_called": "mundial_sede_info",
+      "input_contains": { "id_or_city": "Azteca" },
+      "response_must_contain": ["Azteca", "Ciudad de México"],
+      "judge_rubric": "Evalúa que la respuesta proporcione información de ubicación del Estadio Azteca incluyendo dirección o indicaciones de cómo llegar."
+    }
+  },
+  {
+    "id": "mundial-017",
+    "description": "Información del equipo Argentina con ranking FIFA.",
+    "turns": [
+      { "user": "¿Cuál es el ranking FIFA de Argentina? ¿Cuándo juegan en el Mundial?" }
+    ],
+    "expect": {
+      "tool_called": "mundial_equipo_info",
+      "input_contains": { "equipo": "ARG" },
+      "response_must_contain": ["Argentina", "1"],
+      "judge_rubric": "Evalúa que la respuesta mencione que Argentina es número 1 en el ranking FIFA con 1867 puntos, y liste sus partidos en el Mundial 2026."
+    }
+  },
+  {
+    "id": "mundial-018",
+    "description": "Partidos de la fase de grupos grupo A: el usuario pregunta por el grupo A completo.",
+    "turns": [
+      { "user": "¿Quiénes están en el Grupo A del Mundial y qué partidos tienen?" }
+    ],
+    "expect": {
+      "tool_called": "mundial_partidos_buscar",
+      "input_contains": { "grupo": "A" },
+      "response_must_contain": ["México", "Grupo A"],
+      "judge_rubric": "Evalúa que la respuesta liste los equipos del Grupo A (México, Sudáfrica, Corea del Sur, República Checa) y sus tres jornadas con fechas y sedes correctas."
+    }
+  }
+]
