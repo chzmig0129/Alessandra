@@ -17,6 +17,7 @@ const envSchema = z.object({
   MODEL_CHAT: z.string().default("gpt-4o-mini"),
   MODEL_EVAL: z.string().default("gpt-4o"),
   MODEL_SQL: z.string().default("gemini-2.0-flash"),
+  MODEL_VISION: z.string().default("gemini-2.0-flash"),
   MODEL_EMBEDDINGS: z.string().default("text-embedding-3-small"),
 
   // Session/flow config — optional with defaults
