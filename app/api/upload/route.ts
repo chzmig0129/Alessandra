@@ -4,9 +4,10 @@ import { supabaseAdmin } from "@/db/supabase-server";
 
 export const runtime = "nodejs";
 
-const BUCKET = "alessandra-uploads";
+const BUCKET = process.env.STORAGE_BUCKET ?? "citizen-report-media";
 const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
 const SESSION_ID_RE = /^[a-zA-Z0-9_-]{8,128}$/;
+const SIGNED_URL_TTL = 3600; // 1 hour in seconds
 
 const ALLOWED_MIMES: Readonly<Record<string, string>> = {
   "image/jpeg": "jpg",
@@ -65,33 +66,10 @@ export async function POST(req: Request): Promise<NextResponse> {
   // --- Read file bytes once ---
   const buffer = Buffer.from(await file.arrayBuffer());
 
-  // --- Ensure bucket exists ---
-  const { error: bucketError } = await supabaseAdmin.storage.createBucket(BUCKET, {
-    public: true,
-  });
-
-  if (bucketError) {
-    const isAlreadyExists =
-      bucketError.message?.toLowerCase().includes("already exists") ||
-      (bucketError as unknown as { statusCode?: string | number }).statusCode === 409 ||
-      (bucketError as unknown as { statusCode?: string | number }).statusCode === "409";
-
-    if (!isAlreadyExists) {
-      return NextResponse.json(
-        {
-          error:
-            "bucket creation failed; create alessandra-uploads bucket manually as public",
-          details: bucketError.message,
-        },
-        { status: 500 },
-      );
-    }
-    // Bucket already exists — continue normally
-  }
-
   // --- Build storage path ---
+  // web/ prefix distinguishes web uploads from twilio-uploaded media in the same bucket
   const uniqueId = crypto.randomUUID();
-  const path = `uploads/${sessionId}/${uniqueId}.${ext}`;
+  const path = `web/${sessionId}/${uniqueId}.${ext}`;
 
   // --- Upload ---
   const { error: uploadError } = await supabaseAdmin.storage
@@ -105,12 +83,23 @@ export async function POST(req: Request): Promise<NextResponse> {
     );
   }
 
-  // --- Public URL ---
-  const { data: urlData } = supabaseAdmin.storage.from(BUCKET).getPublicUrl(path);
-  const url = urlData.publicUrl;
+  // --- Signed URL (bucket is private; valid for 1 hour) ---
+  const { data: signedData, error: signedError } = await supabaseAdmin.storage
+    .from(BUCKET)
+    .createSignedUrl(path, SIGNED_URL_TTL);
+
+  if (signedError || !signedData?.signedUrl) {
+    return NextResponse.json(
+      { error: "Signed URL generation failed", details: signedError?.message },
+      { status: 500 },
+    );
+  }
 
   // --- SHA-256 hash ---
   const sha256 = createHash("sha256").update(buffer).digest("hex");
 
-  return NextResponse.json({ url, sha256 }, { status: 200 });
+  return NextResponse.json(
+    { url: signedData.signedUrl, sha256, path, expiresInSec: SIGNED_URL_TTL },
+    { status: 200 },
+  );
 }

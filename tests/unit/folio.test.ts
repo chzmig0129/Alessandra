@@ -42,14 +42,16 @@ function mockRpcErr(message: string) {
 }
 
 const BASE_ARGS: CrearLeadArgs = {
-  p_user_id: "uuid-test-user",
-  p_categoria: "alumbrado",
-  p_tipo: "foco_fundido",
-  p_descripcion: "Foco fundido en la esquina",
-  p_lat: 19.4326,
-  p_lng: -99.1332,
-  p_colonia: "Centro",
-  p_image_urls: [],
+  conversation_id: "uuid-test-conv",
+  user_id: "uuid-test-user",
+  category: "alumbrado",
+  report_type: "alumbrado_luminaria",
+  report: "Foco fundido en la esquina",
+  lat: 19.4326,
+  lng: -99.1332,
+  location_address: "Centro",
+  media_urls: [],
+  priority: 2,
 };
 
 // ---------------------------------------------------------------------------

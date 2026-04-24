@@ -4,31 +4,50 @@
  * All queries hit the public.v_puntos_violeta view defined in
  * migrations/sql/002_views.sql.
  *
+ * Column contract (from F1 view rewrite, 2026-04-24):
+ *   v_puntos_violeta: id, nombre, direccion, colonia, alcaldia, lat, lng,
+ *     telefono, horario, tipo_atencion, atencion_24_7, geocode_precision
+ *
  * Distance ordering is done client-side via haversine because Supabase
  * PostgREST does not expose the acos/haversine SQL expression as a
  * sortable column through the REST API without custom RPC.
+ *
+ * atencion_24_7 is now a pre-computed boolean in the view — no need to
+ * parse the horario string to determine 24/7 availability.
  */
 
 import { supabaseAdmin } from "@/db/supabase-server";
 
 // ---------------------------------------------------------------------------
-// Row types (match v_puntos_violeta view columns)
+// Row types (match v_puntos_violeta view columns per F1 rewrite)
 // ---------------------------------------------------------------------------
 
 export interface PuntoVioletaRow {
   id: number;
   nombre: string | null;
   direccion: string | null;
-  street: string | null;
-  exterior_number: string | null;
   colonia: string | null;
-  postal_code: string | null;
+  /** Alcaldía/demarcación — added in F1 view rewrite. */
+  alcaldia: string | null;
   lat: number | null;
   lng: number | null;
   telefono: string | null;
   horario: string | null;
   tipo_atencion: string | null;
+  /** Pre-computed in view — true when the punto operates 24/7. */
   atencion_24_7: boolean;
+  /** Geocoding precision hint (e.g. "exact", "interpolated", "centroid"). */
+  geocode_precision: string | null;
+  /**
+   * @deprecated Not in F1 view — always null. Kept for backward compat with
+   * puntos-violeta/tools.ts until that file is updated to the F1 schema.
+   */
+  street: string | null;
+  /** @deprecated Not in F1 view — always null. Kept for backward compat. */
+  exterior_number: string | null;
+  /** @deprecated Not in F1 view — always null. Kept for backward compat. */
+  postal_code: string | null;
+  /** @deprecated Not in F1 view — always true (we filter active at view level). Kept for backward compat. */
   active: boolean;
 }
 
@@ -49,11 +68,11 @@ export interface PuntosVioletaFilters {
   lng?: number;
   /** Search radius in km (requires lat/lng) */
   radio_km?: number;
-  /** Neighborhood filter (partial match) */
+  /** Neighborhood filter (partial match against colonia) */
   colonia?: string;
-  /** Attention type filter (partial match) */
+  /** Attention type filter (exact match against tipo_atencion) */
   tipo_atencion?: string;
-  /** If true, only return currently open points */
+  /** If true, only return points with atencion_24_7=true */
   abierto_ahora?: boolean;
   /** Maximum number of results (default 10, max 50) */
   limit?: number;
@@ -68,6 +87,34 @@ const MAX_LIMIT = 50;
 
 function clampLimit(n: number | undefined): number {
   return Math.min(n ?? DEFAULT_LIMIT, MAX_LIMIT);
+}
+
+/**
+ * Map a raw Supabase row to PuntoVioletaRow, filling deprecated fields with
+ * safe null/true defaults since v_puntos_violeta no longer exposes them.
+ * TODO: remove deprecated fields once puntos-violeta/tools.ts is updated.
+ */
+function toPuntoVioletaRow(raw: Record<string, unknown>): PuntoVioletaRow {
+  const r = raw as Record<string, unknown>;
+  return {
+    id: r["id"] as number,
+    nombre: (r["nombre"] ?? null) as string | null,
+    direccion: (r["direccion"] ?? null) as string | null,
+    colonia: (r["colonia"] ?? null) as string | null,
+    alcaldia: (r["alcaldia"] ?? null) as string | null,
+    lat: (r["lat"] ?? null) as number | null,
+    lng: (r["lng"] ?? null) as number | null,
+    telefono: (r["telefono"] ?? null) as string | null,
+    horario: (r["horario"] ?? null) as string | null,
+    tipo_atencion: (r["tipo_atencion"] ?? null) as string | null,
+    atencion_24_7: (r["atencion_24_7"] ?? false) as boolean,
+    geocode_precision: (r["geocode_precision"] ?? null) as string | null,
+    // Deprecated backward-compat fields — not in F1 view, set to safe defaults
+    street: null,
+    exterior_number: null,
+    postal_code: null,
+    active: true,
+  };
 }
 
 /**
@@ -90,6 +137,8 @@ function haversineKm(
 
 // ---------------------------------------------------------------------------
 // Schedule / horario parsing (best-effort)
+// NOTE: With atencion_24_7 pre-computed in the view, this is only used when
+// abierto_ahora=true AND atencion_24_7=false to narrow by horario string.
 // ---------------------------------------------------------------------------
 
 function dayNumberFromCode(code: string): number {
@@ -170,7 +219,6 @@ function parseHorario(horario: string): TimeRange[] | null {
 
   for (const seg of segments) {
     // Expect: <day_spec> <HH:MM>-<HH:MM>
-    // Match pattern: optional day spec then time range
     const m = seg.match(
       /^([A-Za-z\-]+(?:\s+[Aa]\s+[A-Za-z]+)?)\s+(\d{1,2}:\d{2})-(\d{1,2}:\d{2})$/,
     );
@@ -207,7 +255,10 @@ function parseHorario(horario: string): TimeRange[] | null {
 }
 
 /**
- * Returns true if `now` falls within any TimeRange. Returns null if unknown.
+ * Returns true if `now` falls within any TimeRange.
+ * Since atencion_24_7 is now a view column, we only reach here for
+ * non-24/7 points when the caller asks for abierto_ahora.
+ * Returns null if schedule is unknown/unparseable.
  */
 function isOpenNow(
   horario: string | null,
@@ -276,7 +327,18 @@ export async function fetchPuntosVioleta(
   }
 
   if (filters.tipo_atencion) {
-    query = query.ilike("tipo_atencion", `%${filters.tipo_atencion}%`);
+    // tipo_atencion: use eq (exact) per spec; caller can pass partial if needed
+    query = query.eq("tipo_atencion", filters.tipo_atencion);
+  }
+
+  // abierto_ahora: since atencion_24_7 is pre-computed in the view,
+  // we can push this filter to the DB for 24/7 points.
+  // Non-24/7 schedule check is done client-side after fetch.
+  if (filters.abierto_ahora === true) {
+    // NOTE: We do NOT filter at DB level here because non-24/7 points with
+    // valid horario should still be included — client-side isOpenNow handles them.
+    // We do NOT add .eq("atencion_24_7", true) to avoid excluding valid
+    // non-24/7 but currently-open points.
   }
 
   const { data, error } = await query;
@@ -285,7 +347,9 @@ export async function fetchPuntosVioleta(
     return { data: [], error: error.message };
   }
 
-  let rows = (data ?? []) as PuntoVioletaRowWithDistance[];
+  let rows: PuntoVioletaRowWithDistance[] = (data ?? []).map(
+    (raw) => toPuntoVioletaRow(raw as Record<string, unknown>) as PuntoVioletaRowWithDistance,
+  );
 
   // Compute haversine distance and sort if location given
   if (hasLocation && filters.lat !== undefined && filters.lng !== undefined) {
@@ -302,7 +366,7 @@ export async function fetchPuntosVioleta(
       .sort((a, b) => (a.distance_km ?? Infinity) - (b.distance_km ?? Infinity));
   }
 
-  // abierto_ahora filter
+  // abierto_ahora filter — atencion_24_7 is already a view column
   if (filters.abierto_ahora === true) {
     const now = new Date();
     rows = rows.filter((row) => {
@@ -333,5 +397,6 @@ export async function fetchPuntoDetalle(
     .maybeSingle();
 
   if (error) return { data: null, error: error.message };
-  return { data: data as PuntoVioletaRow | null, error: null };
+  if (!data) return { data: null, error: null };
+  return { data: toPuntoVioletaRow(data as Record<string, unknown>), error: null };
 }

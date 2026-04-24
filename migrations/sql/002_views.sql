@@ -9,6 +9,9 @@
 --
 -- Idempotency: every statement uses CREATE OR REPLACE VIEW — safe to re-apply.
 --
+-- Schema audit reconciled: 2026-04-24. Column names verified against real
+-- Supabase schema via MCP audit.
+--
 -- Apply:
 --   psql $SUPABASE_DB_URL -f migrations/sql/002_views.sql
 -- =============================================================================
@@ -17,38 +20,56 @@
 -- 1. v_mundial_partidos
 --    Denormalised match list with team names, confederation, ranking and venue.
 --    fecha_hora_cdmx converts the UTC timestamp to America/Mexico_City.
+--    Schema "mundial-fifa" has a hyphen — must be double-quoted everywhere.
+--    Real partidos cols used: numero_partido, fase, grupo, jornada, fecha_utc,
+--    fecha_local, equipo_local_codigo, equipo_visitante_codigo,
+--    equipo_local_desc, equipo_visitante_desc, sede_id, estado,
+--    goles_local, goles_visitante, goles_local_penales, goles_visitante_penales.
+--    Real sedes cols for location: latitud, longitud (aliased to sede_lat/lng).
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE VIEW v_mundial_partidos AS
 SELECT
     p.id,
-    (p.fecha_utc AT TIME ZONE 'America/Mexico_City')::timestamptz  AS fecha_hora_cdmx,
+    p.numero_partido,
+    -- Returned as raw timestamptz; TS formats with Intl + timeZone: 'America/Mexico_City'.
+    -- Earlier (AT TIME ZONE … ::timestamptz) double-cast corrupted the value.
+    p.fecha_utc                                                          AS fecha_hora_cdmx,
     p.fase,
     p.grupo,
+    p.jornada,
     -- Local / equipo A
-    p.equipo_local_codigo                                           AS equipo_a_codigo,
-    ea.nombre                                                       AS equipo_a_nombre,
-    p.equipo_local_desc                                             AS equipo_a_desc,
-    ea.confederacion                                                AS conf_a,
-    ea.fifa_ranking                                                 AS rank_a,
+    p.equipo_local_codigo                                                AS equipo_a_codigo,
+    ea.nombre                                                            AS equipo_a_nombre,
+    p.equipo_local_desc                                                  AS equipo_a_desc,
+    ea.confederacion                                                     AS conf_a,
+    ea.fifa_ranking                                                      AS rank_a,
+    ea.bandera_url                                                       AS bandera_a,
     -- Visitante / equipo B
-    p.equipo_visitante_codigo                                       AS equipo_b_codigo,
-    eb.nombre                                                       AS equipo_b_nombre,
-    p.equipo_visitante_desc                                         AS equipo_b_desc,
-    eb.confederacion                                                AS conf_b,
-    eb.fifa_ranking                                                 AS rank_b,
+    p.equipo_visitante_codigo                                            AS equipo_b_codigo,
+    eb.nombre                                                            AS equipo_b_nombre,
+    p.equipo_visitante_desc                                              AS equipo_b_desc,
+    eb.confederacion                                                     AS conf_b,
+    eb.fifa_ranking                                                      AS rank_b,
+    eb.bandera_url                                                       AS bandera_b,
     -- Sede
-    s.id                                                            AS sede_id,
-    s.ciudad                                                        AS sede_ciudad,
-    s.pais                                                          AS sede_pais,
-    s.nombre                                                        AS sede_estadio,
+    p.sede_id,
+    s.nombre                                                             AS sede_nombre,
+    s.ciudad                                                             AS sede_ciudad,
+    s.pais                                                               AS sede_pais,
+    s.capacidad                                                          AS sede_capacidad,
+    s.latitud                                                            AS sede_lat,
+    s.longitud                                                           AS sede_lng,
+    s.google_maps_url                                                    AS sede_google_maps_url,
     -- Estado y marcador
     p.estado,
-    p.goles_local                                                   AS marcador_a,
-    p.goles_visitante                                               AS marcador_b
-FROM "mundial-fifa".partidos     AS p
-LEFT JOIN "mundial-fifa".equipos AS ea ON ea.codigo = p.equipo_local_codigo
-LEFT JOIN "mundial-fifa".equipos AS eb ON eb.codigo = p.equipo_visitante_codigo
-LEFT JOIN "mundial-fifa".sedes   AS s  ON s.id = p.sede_id;
+    p.goles_local,
+    p.goles_visitante,
+    p.goles_local_penales,
+    p.goles_visitante_penales
+FROM "mundial-fifa".partidos      AS p
+LEFT JOIN "mundial-fifa".equipos  AS ea ON ea.codigo = p.equipo_local_codigo
+LEFT JOIN "mundial-fifa".equipos  AS eb ON eb.codigo = p.equipo_visitante_codigo
+LEFT JOIN "mundial-fifa".sedes    AS s  ON s.id = p.sede_id;
 
 -- ---------------------------------------------------------------------------
 -- 2. v_mundial_equipos
@@ -68,8 +89,8 @@ FROM "mundial-fifa".equipos;
 
 -- ---------------------------------------------------------------------------
 -- 3. v_mundial_sedes
---    Venue catalogue with location; google_maps_url is a convenience column
---    present in the real table (seen in findSede.ts queries).
+--    Venue catalogue with location.
+--    latitud/longitud aliased to lat/lng for API consistency.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE VIEW v_mundial_sedes AS
 SELECT
@@ -77,41 +98,22 @@ SELECT
     nombre,
     ciudad,
     pais,
-    direccion,
     capacidad,
-    latitud,
-    longitud,
+    latitud                                                              AS lat,
+    longitud                                                             AS lng,
     zona_horaria,
     descripcion,
-    -- TODO: google_maps_url is present in the sedes table per findSede.ts but
-    --       was not listed in queryDatabase.ts schema doc. Including it here;
-    --       if column does not exist, remove this line and re-apply.
+    direccion,
     google_maps_url
 FROM "mundial-fifa".sedes;
 
 -- ---------------------------------------------------------------------------
 -- 4. v_mundial_fan_fest
 --    Fan Festival locations (used by findFanFest tool).
---    NOTE: spec named this v_mundial_sedes in 4.4 but the table is fan_fest;
---          keeping original name pattern for clarity.
+--    latitud/longitud aliased to lat/lng for consistency.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE VIEW v_mundial_fan_fest AS
-SELECT
-    id,
-    nombre,
-    ciudad,
-    pais,
-    ubicacion,
-    latitud,
-    longitud,
-    fecha_inicio,
-    fecha_fin,
-    horario,
-    capacidad,
-    entrada_gratis,
-    descripcion,
-    url_oficial,
-    google_maps_url
+SELECT *
 FROM "mundial-fifa".fan_fest;
 
 -- ---------------------------------------------------------------------------
@@ -119,159 +121,177 @@ FROM "mundial-fifa".fan_fest;
 --    Match events (goals, cards, substitutions…). No sensitive columns.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE VIEW v_mundial_eventos_partido AS
-SELECT
-    id,
-    partido_id,
-    minuto,
-    minuto_extra,
-    tipo,
-    equipo_codigo,
-    jugador,
-    jugador_asiste,
-    detalle
+SELECT *
 FROM "mundial-fifa".eventos_partido;
 
 -- ---------------------------------------------------------------------------
--- 6. v_puntos_violeta
---    Safe spaces for women in CDMX.
---    Excluded: interior_number (PII risk), responsible (internal routing),
---              facebook/instagram/twitter (social handles, not needed for
---              routing), geocode_precision (internal quality flag),
---              source_id (external import id), created_at/updated_at.
---    The column `tipo` is present per queryAlessandra.ts schema doc.
---    Spec requested: id, nombre→name, direccion(street+ext), colonia→neighborhood,
---    alcaldia(not a col; use bounding box externally), lat, lng, telefono→phone,
---    horario→hours, tipo_atencion(mapped to tipo), atencion_24_7(derived).
+-- 6. v_mundial_alineaciones
+--    Squad lineups per match.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE VIEW v_mundial_alineaciones AS
+SELECT *
+FROM "mundial-fifa".alineaciones;
+
+-- ---------------------------------------------------------------------------
+-- 7. v_puntos_violeta
+--    Safe spaces for women in CDMX (Alcaldía Cuauhtémoc).
+--    Real cols: name, hours, street, exterior_number, neighborhood,
+--               phone, lat, lng, tipo, active, geocode_precision.
+--    alcaldia is a literal constant — not a column on the table.
+--    atencion_24_7 derived from hours text.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE VIEW v_puntos_violeta AS
 SELECT
     id,
-    name                                                            AS nombre,
-    -- Build a single dirección string from street + exterior_number
-    CASE
-        WHEN exterior_number IS NOT NULL AND exterior_number NOT IN ('', 'N/A', 'n/a', 'NO TIENE')
-             THEN trim(concat(street, ' ', exterior_number))
-        ELSE street
-    END                                                             AS direccion,
-    street,
-    exterior_number,
-    neighborhood                                                    AS colonia,
-    postal_code,
+    name                                                                 AS nombre,
+    concat_ws(' ', street, exterior_number)                             AS direccion,
+    neighborhood                                                         AS colonia,
+    'Cuauhtémoc'::text                                                   AS alcaldia,
     lat,
     lng,
-    phone                                                           AS telefono,
-    hours                                                           AS horario,
-    tipo                                                            AS tipo_atencion,
-    -- atencion_24_7: derived from hours text; best-effort
+    phone                                                                AS telefono,
+    hours                                                                AS horario,
+    tipo                                                                 AS tipo_atencion,
     (
-        lower(coalesce(hours, '')) LIKE '%24%'
-        OR lower(coalesce(hours, '')) LIKE '%las 24%'
-        OR lower(coalesce(hours, '')) LIKE '%24 horas%'
-    )                                                               AS atencion_24_7,
-    active
+        hours ILIKE '%24%'
+        OR hours ILIKE '%horas%'
+    )                                                                    AS atencion_24_7,
+    geocode_precision
 FROM public.puntos_violeta
 WHERE active = true;
 
 -- ---------------------------------------------------------------------------
--- 7. v_emergency_contacts
---    Emergency / crisis contacts (phone lines, services).
---    ASSUMPTION: table public.emergency_contacts has at minimum
---    id, nombre, telefono, descripcion, category, activo columns.
---    TODO: verify column names against actual table DDL; adjust if needed.
+-- 8. v_emergency_contacts
+--    Emergency / crisis contacts.
+--    Real cols: number, name, available_24_7, active (plus description,
+--               category, coverage_area, whatsapp, priority).
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE VIEW v_emergency_contacts AS
 SELECT
     id,
-    nombre,
-    telefono,
-    descripcion,
+    name                                                                 AS nombre,
+    number                                                               AS telefono,
+    description                                                          AS descripcion,
     category,
-    activo
+    available_24_7,
+    coverage_area,
+    whatsapp,
+    priority
 FROM public.emergency_contacts
-WHERE activo = true;
+WHERE active = true;
 
 -- ---------------------------------------------------------------------------
--- 8. v_security_facilities
---    Centros de salud, hospitales, instalaciones de seguridad públicas.
---    The table public.centros_salud is documented in queryAlessandra.ts and
---    covers hospitals and health centres in Alcaldía Cuauhtémoc.
---    Mapping: nombre→nombre, tipo→tipo, direccion→direccion, lat, lng,
---             telefono, horario.
---    NOTE: spec names the source table as "security_facilities" but the only
---          confirmed table with this profile is public.centros_salud.
---    TODO: if a separate public.security_facilities table exists, replace the
---          FROM clause. For now using centros_salud as best-effort source.
+-- 9. v_security_facilities
+--    Security and public-safety facilities.
+--    Real cols: facility_type, opens_24_7 (aliased as tipo, atencion_24_7).
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE VIEW v_security_facilities AS
 SELECT
     id,
-    nombre,
-    tipo,
-    direccion,
+    name                                                                 AS nombre,
+    facility_type                                                        AS tipo,
+    subtype,
+    address                                                              AS direccion,
+    colonia,
     lat,
     lng,
-    telefono,
-    horario
-FROM public.centros_salud;
+    phone                                                                AS telefono,
+    opening_hours                                                        AS horario,
+    opens_24_7                                                           AS atencion_24_7,
+    jurisdiction_sector
+FROM public.security_facilities
+WHERE active = true;
 
 -- ---------------------------------------------------------------------------
--- 9. v_leads_publico
---    Public-safe view of citizen reports (leads/reportes).
---    NEVER expose: descripcion (may contain PII), datos del reportante
---    (nombre, email, telefono of the person who filed the report), any
+-- 10. v_leads_publico
+--    Public-safe view of citizen reports.
+--    NEVER expose: report (may contain PII), datos del reportante,
 --    internal routing or assignee information.
---    ASSUMPTION: table public.leads has at minimum
---    folio, categoria, tipo, status, created_at, colonia columns.
---    TODO: verify column names against actual table DDL; adjust if needed.
+--    Real cols: folio, category (not categoria), report_type (not tipo),
+--               status (lead_status enum), created_at, location_address.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE VIEW v_leads_publico AS
 SELECT
     folio,
-    categoria,
-    tipo,
-    status,
+    category                                                             AS categoria,
+    report_type                                                          AS tipo,
+    status::text,
     created_at,
-    colonia
-FROM public.leads;
+    location_address                                                     AS colonia
+FROM public.leads
+WHERE folio IS NOT NULL;
 
 -- ---------------------------------------------------------------------------
--- 10. v_tramites
+-- 11. v_tramites
 --    Trámites municipales: catalogue of administrative procedures.
---    ASSUMPTION: table public.tramites has at minimum
---    id, nombre, descripcion, requisitos, costo, area_responsable columns.
---    TODO: verify column names against actual table DDL; adjust if needed.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE VIEW v_tramites AS
 SELECT
     id,
-    nombre,
-    descripcion,
-    requisitos,
-    costo,
-    area_responsable
-FROM public.tramites;
+    name                                                                 AS nombre,
+    description                                                          AS descripcion,
+    requirements                                                         AS requisitos,
+    area,
+    business_hours,
+    contact,
+    dependency,
+    presentation
+FROM public.tramites
+WHERE active = true;
 
 -- ---------------------------------------------------------------------------
--- 11. v_cartelera_events  /  v_cartelera_venues
+-- 12. v_cartelera_events
 --    Cultural events billboard for Alcaldía Cuauhtémoc.
---    The source tables (cartelera_events / cartelera_venues) are NOT present
---    in any existing tool code reviewed (mundial-bot/src/mastra/tools/*.ts,
---    mundial-bot/src/db/client.ts). Their existence in the DB is unconfirmed.
---    Per spec: if tables do not exist, leave a TODO --SKIP-- comment instead.
---    TODO --SKIP-- cartelera_events: table public.cartelera_events not confirmed;
---         create view once table DDL is available.
---    TODO --SKIP-- cartelera_venues: table public.cartelera_venues not confirmed;
---         create view once table DDL is available.
+--    Table public.cartelera_events confirmed existing per schema audit.
 -- ---------------------------------------------------------------------------
-
-/*
--- Uncomment and adjust column list once tables are confirmed to exist:
-
 CREATE OR REPLACE VIEW v_cartelera_events AS
 SELECT *
 FROM public.cartelera_events;
 
+-- ---------------------------------------------------------------------------
+-- 13. v_cartelera_venues
+--    Venues for cultural events.
+--    Table public.cartelera_venues confirmed existing per schema audit.
+-- ---------------------------------------------------------------------------
 CREATE OR REPLACE VIEW v_cartelera_venues AS
 SELECT *
 FROM public.cartelera_venues;
-*/
+
+-- ---------------------------------------------------------------------------
+-- 14. v_report_taxonomy
+--    Report classification taxonomy used by crear_lead and AI analysis.
+--    Cols: slug, parent_slug, kind, name, attributes.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE VIEW v_report_taxonomy AS
+SELECT
+    slug,
+    parent_slug,
+    kind,
+    name,
+    attributes
+FROM public.report_taxonomy
+WHERE active = true;
+
+-- ---------------------------------------------------------------------------
+-- 15. Security hardening: force SECURITY INVOKER on all v_* views so they
+--     respect the calling role's RLS instead of running as the view owner.
+--     Without this, Postgres defaults to SECURITY DEFINER, which bypasses
+--     RLS for any caller (including anon via PostgREST). Service-role
+--     callers bypass RLS anyway; sandbox role only sees rows it has direct
+--     SELECT on the underlying tables for (none, by design — sandbox is
+--     restricted via 004 GRANTs to the views themselves).
+-- ---------------------------------------------------------------------------
+ALTER VIEW v_mundial_partidos        SET (security_invoker = true);
+ALTER VIEW v_mundial_equipos         SET (security_invoker = true);
+ALTER VIEW v_mundial_sedes           SET (security_invoker = true);
+ALTER VIEW v_mundial_fan_fest        SET (security_invoker = true);
+ALTER VIEW v_mundial_eventos_partido SET (security_invoker = true);
+ALTER VIEW v_mundial_alineaciones    SET (security_invoker = true);
+ALTER VIEW v_puntos_violeta          SET (security_invoker = true);
+ALTER VIEW v_emergency_contacts      SET (security_invoker = true);
+ALTER VIEW v_security_facilities     SET (security_invoker = true);
+ALTER VIEW v_leads_publico           SET (security_invoker = true);
+ALTER VIEW v_tramites                SET (security_invoker = true);
+ALTER VIEW v_cartelera_events        SET (security_invoker = true);
+ALTER VIEW v_cartelera_venues        SET (security_invoker = true);
+ALTER VIEW v_report_taxonomy         SET (security_invoker = true);

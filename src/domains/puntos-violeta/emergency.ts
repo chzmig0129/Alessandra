@@ -8,6 +8,14 @@
  *
  * emergencia_mujer_tool is the Mastra-wrapped version for cases where the LLM
  * needs to call it explicitly (e.g. the user asks for emergency resources).
+ *
+ * Column contract (v_puntos_violeta per F1 view rewrite, 2026-04-24):
+ *   id, nombre, direccion, colonia, alcaldia, lat, lng, telefono,
+ *   horario, tipo_atencion, atencion_24_7, geocode_precision
+ *
+ * emergency_contacts real cols (2026-04-24):
+ *   id, number, name, category, description, available_24_7,
+ *   coverage_area, website, whatsapp, priority, active
  */
 
 import { createTool } from "@mastra/core/tools";
@@ -28,6 +36,8 @@ export interface PuntoVioleta24_7 {
   nombre: string | null;
   direccion: string | null;
   colonia: string | null;
+  /** Alcaldía — added in F1 view rewrite. */
+  alcaldia: string | null;
   lat: number | null;
   lng: number | null;
   telefono: string | null;
@@ -75,6 +85,8 @@ const TELEFONOS_CLAVE: string[] = [
  *
  * This function runs on the critical pre-LLM path — keep it fast.
  * Throws on Supabase errors so the caller can handle gracefully.
+ *
+ * Uses v_puntos_violeta WHERE atencion_24_7=true ORDER BY haversine LIMIT 3.
  */
 export async function emergencia_mujer_canalizar(
   params: Partial<LatLng> = {},
@@ -82,11 +94,12 @@ export async function emergencia_mujer_canalizar(
   const hasLocation =
     typeof params.lat === "number" && typeof params.lng === "number";
 
-  // Fetch all 24/7 puntos violeta
+  // Fetch all 24/7 puntos violeta using the view's pre-computed atencion_24_7 column.
+  // Select only the columns needed (matches F1 view rewrite column names).
   const { data: raw, error } = await supabaseAdmin
     .from("v_puntos_violeta")
     .select(
-      "id, nombre, direccion, colonia, lat, lng, telefono, atencion_24_7",
+      "id, nombre, direccion, colonia, alcaldia, lat, lng, telefono, atencion_24_7",
     )
     .eq("atencion_24_7", true);
 
@@ -96,11 +109,12 @@ export async function emergencia_mujer_canalizar(
     );
   }
 
-  let puntos = (raw ?? []) as Array<{
+  const puntos = (raw ?? []) as Array<{
     id: number;
     nombre: string | null;
     direccion: string | null;
     colonia: string | null;
+    alcaldia: string | null;
     lat: number | null;
     lng: number | null;
     telefono: string | null;
@@ -118,6 +132,7 @@ export async function emergencia_mujer_canalizar(
         nombre: p.nombre,
         direccion: p.direccion,
         colonia: p.colonia,
+        alcaldia: p.alcaldia,
         lat: p.lat,
         lng: p.lng,
         telefono: p.telefono,
@@ -135,6 +150,7 @@ export async function emergencia_mujer_canalizar(
       nombre: p.nombre,
       direccion: p.direccion,
       colonia: p.colonia,
+      alcaldia: p.alcaldia,
       lat: p.lat,
       lng: p.lng,
       telefono: p.telefono,
@@ -143,7 +159,8 @@ export async function emergencia_mujer_canalizar(
 
   const top3 = puntosWithDistance.slice(0, 3);
 
-  // Fetch emergency contacts for "mujer" category
+  // Fetch emergency contacts for "mujer" category via lookupEmergencyContacts.
+  // EmergencyContact type now matches real cols (name, number, available_24_7, whatsapp).
   const contactos = await lookupEmergencyContacts("mujer");
 
   return {
@@ -188,6 +205,7 @@ export const emergencia_mujer_tool = createTool({
             nombre: z.string().nullable(),
             direccion: z.string().nullable(),
             colonia: z.string().nullable(),
+            alcaldia: z.string().nullable(),
             lat: z.number().nullable(),
             lng: z.number().nullable(),
             telefono: z.string().nullable(),
@@ -197,11 +215,12 @@ export const emergencia_mujer_tool = createTool({
         contactos: z.array(
           z.object({
             id: z.number(),
-            nombre: z.string(),
-            telefono: z.string(),
-            categoria: z.string().nullable(),
-            descripcion: z.string().nullable(),
-            activo: z.boolean(),
+            name: z.string(),
+            number: z.string(),
+            category: z.string().nullable(),
+            description: z.string().nullable(),
+            available_24_7: z.boolean(),
+            whatsapp: z.string().nullable(),
           }),
         ),
         telefonos_clave: z.array(z.string()),

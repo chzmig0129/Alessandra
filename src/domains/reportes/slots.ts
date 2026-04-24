@@ -3,17 +3,28 @@
  * Each state declares which slots it needs, whether they are required,
  * a user-facing prompt, and an optional Zod validator.
  *
+ * Slot key naming convention (Spanish, UI-facing):
+ *   categoria  → maps to RPC p_category
+ *   tipo       → maps to RPC p_report_type
+ *   descripcion → maps to RPC p_report
+ *   ubicacion  → composed: {lat, lng, location_address} or {direccion_libre, colonia}
+ *   fotos      → maps to RPC p_media_urls (optional array of URLs)
+ *   confirmado → boolean confirmation gate
+ *
  * For RECOLECTANDO_UBICACION: the user may supply either
  *   { lat, lng }  OR  { direccion_libre, colonia }
  * This is modelled as a single virtual slot `ubicacion` whose validator
  * accepts either form.
  *
- * For categoria/tipo: validators are async and pull loadReportTaxonomy() lazily.
+ * For categoria/tipo: validators are async and use taxonomy helpers
+ * isValidCategoria / isValidTipo to validate slugs.
+ * The LLM/agent is responsible for resolving free-text to slug BEFORE
+ * calling reporte_slot_llenar — slots expect slugs, not free-form text.
  */
 
 import { z } from "zod";
 import type { ReporteState } from "./state-machine";
-import { loadReportTaxonomy } from "@/validation/taxonomy";
+import { isValidCategoria, isValidTipo } from "@/validation/taxonomy";
 import { LatLngSchema } from "@/validation/zod-schemas";
 
 // ---------------------------------------------------------------------------
@@ -46,13 +57,15 @@ export interface StateSlotConfig {
 
 // ---------------------------------------------------------------------------
 // Ubicacion virtual slot validator
-// Accepts: { lat: number, lng: number }
+// Accepts: { lat: number, lng: number, location_address?: string }
 //       OR { direccion_libre: string, colonia: string }
 // ---------------------------------------------------------------------------
 
 const UbicacionSchema = z.union([
-  // Option A — coordinates
-  LatLngSchema,
+  // Option A — coordinates (with optional reverse-geocoded address)
+  LatLngSchema.extend({
+    location_address: z.string().optional(),
+  }),
   // Option B — free-form address
   z.object({
     direccion_libre: z.string().min(1),
@@ -81,11 +94,11 @@ export const SLOT_CONFIG: Record<ReporteState, StateSlotConfig> = {
           if (!parsed.success) {
             return { success: false, error: "La categoría debe ser un texto no vacío." };
           }
-          const { categorias } = await loadReportTaxonomy();
-          if (categorias.size > 0 && !categorias.has(parsed.data)) {
+          const valid = await isValidCategoria(parsed.data);
+          if (!valid) {
             return {
               success: false,
-              error: `Categoría no reconocida: "${parsed.data}". Opciones válidas: ${[...categorias].join(", ")}.`,
+              error: `Categoría no reconocida: "${parsed.data}". Proporciona un slug de categoría válido.`,
             };
           }
           return { success: true, data: parsed.data };
@@ -100,16 +113,14 @@ export const SLOT_CONFIG: Record<ReporteState, StateSlotConfig> = {
         key: "tipo",
         required: true,
         prompt:
-          "¿Puedes ser más específico sobre el tipo de problema? (Ej: bache en calle secundaria, fuga de agua, foco fundido...)",
+          "¿Puedes ser más específico sobre el tipo de problema? (Ej: bache-calle-secundaria, fuga-agua, foco-fundido...)",
         asyncValidator: async (value) => {
           const parsed = z.string().min(1).safeParse(value);
           if (!parsed.success) {
             return { success: false, error: "El tipo debe ser un texto no vacío." };
           }
-          // We need categoria in context, but since validators receive only
-          // the slot value here, tipo is validated loosely unless the caller
-          // provides context.  The tools layer does full categoria+tipo
-          // cross-validation using isValidTipo().
+          // Loose validation at slot level — full categoria+tipo cross-validation
+          // happens in tools.ts before calling the RPC.
           return { success: true, data: parsed.data };
         },
       },
@@ -134,7 +145,7 @@ export const SLOT_CONFIG: Record<ReporteState, StateSlotConfig> = {
         /**
          * Virtual slot that accepts either coordinate form or address form.
          * The orchestrator populates this key with whichever form the user
-         * provides.  Downstream (folio.ts), the tools layer must destructure
+         * provides.  Downstream (tools.ts), the tools layer must destructure
          * the value and map it to the appropriate RPC parameters.
          */
         key: "ubicacion",
@@ -151,16 +162,16 @@ export const SLOT_CONFIG: Record<ReporteState, StateSlotConfig> = {
       {
         /**
          * Optional — user can skip with "no" / "sin foto".
+         * key: "fotos" holds an array of photo URLs.
          * required: false means nextRequiredSlot() won't block here and
          * transitions() will advance once the state is entered.
          */
-        key: "foto_url",
+        key: "fotos",
         required: false,
         prompt:
           "¿Tienes una foto del problema? Puedes enviarla ahora o escribir \"sin foto\" para continuar.",
         validator: z
-          .string()
-          .url("La foto debe ser una URL válida.")
+          .array(z.string().url("Cada foto debe ser una URL válida."))
           .or(z.literal("sin_foto")),
       },
     ],

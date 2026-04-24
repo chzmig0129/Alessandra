@@ -95,7 +95,7 @@ export async function appendMessage(
 
   const { error: updateError } = await supabaseAdmin
     .from("conversations")
-    .update({ messages: updated, updated_at: new Date().toISOString() })
+    .update({ messages: updated, last_message_at: new Date().toISOString() })
     .eq("id", conversationId);
 
   if (updateError) {

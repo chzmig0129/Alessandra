@@ -5,13 +5,27 @@
  * migrations/sql/002_views.sql which denormalize the "mundial-fifa" schema.
  * No schema() override is needed — the views live in public.
  *
+ * Column contract (from F1 view rewrite, 2026-04-24):
+ *   v_mundial_partidos: id, fecha_hora_cdmx, fase, grupo, equipo_a_codigo,
+ *     equipo_a_nombre, equipo_a_desc, conf_a, rank_a, equipo_b_codigo,
+ *     equipo_b_nombre, equipo_b_desc, conf_b, rank_b, sede_id, sede_nombre,
+ *     sede_ciudad, sede_pais, sede_lat, sede_lng, estado, goles_local,
+ *     goles_visitante
+ *   v_mundial_sedes: id, nombre, ciudad, pais, direccion, capacidad,
+ *     latitud, longitud, zona_horaria, descripcion, google_maps_url
+ *   v_mundial_equipos: codigo, nombre, nombre_en, confederacion, grupo,
+ *     bandera_url, bandera_emoji, fifa_ranking
+ *   v_mundial_fan_fest: id, nombre, ciudad, pais, ubicacion, latitud,
+ *     longitud, fecha_inicio, fecha_fin, horario, capacidad, entrada_gratis,
+ *     descripcion, url_oficial, google_maps_url
+ *
  * LIMIT: max 50 rows, default 10 for searches.
  */
 
 import { supabaseAdmin } from "@/db/supabase-server";
 
 // ---------------------------------------------------------------------------
-// Row types (match v_mundial_* view columns)
+// Row types (match v_mundial_* view columns as aliased by F1 view rewrite)
 // ---------------------------------------------------------------------------
 
 export interface PartidoRow {
@@ -30,11 +44,25 @@ export interface PartidoRow {
   conf_b: string | null;
   rank_b: number | null;
   sede_id: number | null;
+  /** Alias: nombre del estadio/sede. Previously "sede_estadio" — now "sede_nombre". */
+  sede_nombre: string | null;
   sede_ciudad: string | null;
   sede_pais: string | null;
-  sede_estadio: string | null;
+  sede_lat: number | null;
+  sede_lng: number | null;
   estado: string | null;
+  /** Goals scored by the local team (was "marcador_a"). */
+  goles_local: number | null;
+  /** Goals scored by the visiting team (was "marcador_b"). */
+  goles_visitante: number | null;
+  /**
+   * @deprecated Use `sede_nombre` — kept for backward compat with tools.ts/formatters.ts
+   * until those files are updated to the F1 column rename.
+   */
+  sede_estadio: string | null;
+  /** @deprecated Use `goles_local` — kept for backward compat. */
   marcador_a: number | null;
+  /** @deprecated Use `goles_visitante` — kept for backward compat. */
   marcador_b: number | null;
 }
 
@@ -119,7 +147,7 @@ export interface PartidoFilters {
   fecha?: string;
   /** Team code (3-letter FIFA) or name fragment */
   equipo?: string;
-  /** Venue city */
+  /** Venue city (matches sede_ciudad) */
   ciudad?: string;
   /** Match phase: 'grupos' | 'dieciseisavos' | 'octavos' | 'cuartos' | 'semifinal' | 'tercer_lugar' | 'final' */
   fase?: string;
@@ -152,6 +180,49 @@ function clampLimit(n: number | undefined): number {
   return Math.min(n ?? DEFAULT_LIMIT, MAX_LIMIT);
 }
 
+/**
+ * Map a raw view row to PartidoRow, populating deprecated aliases from real cols.
+ * The view exposes sede_nombre/goles_local/goles_visitante; we alias back to
+ * sede_estadio/marcador_a/marcador_b so existing consumers (tools.ts, formatters.ts)
+ * continue to compile without modification.
+ * TODO: remove aliases once tools.ts and formatters.ts are updated.
+ */
+function toPartidoRow(raw: Record<string, unknown>): PartidoRow {
+  const r = raw as Record<string, unknown>;
+  const sede_nombre = (r["sede_nombre"] ?? null) as string | null;
+  const goles_local = (r["goles_local"] ?? null) as number | null;
+  const goles_visitante = (r["goles_visitante"] ?? null) as number | null;
+  return {
+    id: r["id"] as number,
+    fecha_hora_cdmx: (r["fecha_hora_cdmx"] ?? null) as string | null,
+    fase: (r["fase"] ?? null) as string | null,
+    grupo: (r["grupo"] ?? null) as string | null,
+    equipo_a_codigo: (r["equipo_a_codigo"] ?? null) as string | null,
+    equipo_a_nombre: (r["equipo_a_nombre"] ?? null) as string | null,
+    equipo_a_desc: (r["equipo_a_desc"] ?? null) as string | null,
+    conf_a: (r["conf_a"] ?? null) as string | null,
+    rank_a: (r["rank_a"] ?? null) as number | null,
+    equipo_b_codigo: (r["equipo_b_codigo"] ?? null) as string | null,
+    equipo_b_nombre: (r["equipo_b_nombre"] ?? null) as string | null,
+    equipo_b_desc: (r["equipo_b_desc"] ?? null) as string | null,
+    conf_b: (r["conf_b"] ?? null) as string | null,
+    rank_b: (r["rank_b"] ?? null) as number | null,
+    sede_id: (r["sede_id"] ?? null) as number | null,
+    sede_nombre,
+    sede_ciudad: (r["sede_ciudad"] ?? null) as string | null,
+    sede_pais: (r["sede_pais"] ?? null) as string | null,
+    sede_lat: (r["sede_lat"] ?? null) as number | null,
+    sede_lng: (r["sede_lng"] ?? null) as number | null,
+    estado: (r["estado"] ?? null) as string | null,
+    goles_local,
+    goles_visitante,
+    // Deprecated aliases — keep in sync with real values
+    sede_estadio: sede_nombre,
+    marcador_a: goles_local,
+    marcador_b: goles_visitante,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // fetchPartidos
 // ---------------------------------------------------------------------------
@@ -168,7 +239,6 @@ export async function fetchPartidos(
 
   if (filters.fecha) {
     // fecha_hora_cdmx is timestamptz; filter by date range in CDMX timezone.
-    // We cast to text and match prefix to avoid timezone math in JS.
     query = query
       .gte("fecha_hora_cdmx", `${filters.fecha}T00:00:00`)
       .lt("fecha_hora_cdmx", `${filters.fecha}T23:59:59`);
@@ -191,14 +261,14 @@ export async function fetchPartidos(
   }
 
   if (filters.ciudad) {
+    // sede_ciudad is the column name in F1's rewritten view (was "ciudad").
     query = query.ilike("sede_ciudad", `%${filters.ciudad}%`);
   }
 
   if (filters.equipo) {
     const eq = filters.equipo.toUpperCase();
-    // Try exact code match first; fallback covered by ilike on name
-    // Supabase doesn't support OR across columns in a single .filter easily,
-    // so we use the .or() helper.
+    // Match either local OR visitante (code or name).
+    // Using .or() per spec: equipo filter must match equipo_a_codigo OR equipo_b_codigo.
     query = query.or(
       `equipo_a_codigo.eq.${eq},equipo_b_codigo.eq.${eq},` +
         `equipo_a_nombre.ilike.%${filters.equipo}%,equipo_b_nombre.ilike.%${filters.equipo}%,` +
@@ -206,6 +276,7 @@ export async function fetchPartidos(
     );
   }
 
+  // Default order: fecha_hora_cdmx ASC
   const order = filters.order_by === "desc" ? { ascending: false } : { ascending: true };
   query = query.order("fecha_hora_cdmx", order);
 
@@ -214,7 +285,8 @@ export async function fetchPartidos(
   if (error) {
     return { data: [], error: error.message };
   }
-  return { data: (data ?? []) as PartidoRow[], error: null };
+  const rows = (data ?? []).map((raw) => toPartidoRow(raw as Record<string, unknown>));
+  return { data: rows, error: null };
 }
 
 // ---------------------------------------------------------------------------
@@ -234,7 +306,7 @@ export async function fetchSedeInfo(
     return { data: data as SedeRow | null, error: null };
   }
 
-  // Search by city or name fragment
+  // Search by city or stadium name fragment (ciudad ILIKE per spec)
   const { data, error } = await supabaseAdmin
     .from("v_mundial_sedes")
     .select("*")
@@ -293,7 +365,7 @@ export async function fetchPartidoDetalle(
   if (pErr) return { data: null, error: pErr.message };
   if (!partido) return { data: null, error: `Partido ${id} no encontrado` };
 
-  const base = partido as PartidoRow;
+  const base = toPartidoRow(partido as Record<string, unknown>);
 
   // Fetch match events
   const { data: eventosData, error: eErr } = await supabaseAdmin
@@ -342,7 +414,7 @@ export async function fetchEquipo(
 
   if (eqErr) return { equipo: null, proximos_partidos: [], error: eqErr.message };
 
-  // If no exact code match, search by name
+  // If no exact code match, search by name (nombre OR nombre_en ILIKE)
   if (!equipo) {
     const { data: byName, error: nameErr } = await supabaseAdmin
       .from("v_mundial_equipos")
@@ -367,7 +439,8 @@ export async function fetchEquipo(
 
   const codigo = (equipo as EquipoRow).codigo;
 
-  // Fetch upcoming matches for this team
+  // Fetch upcoming matches for this team.
+  // Filter uses equipo_a_codigo OR equipo_b_codigo (per spec: .or() for both sides).
   const { data: partidos, error: pErr } = await fetchPartidos({
     equipo: codigo,
     proximos: true,

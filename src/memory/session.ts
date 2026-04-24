@@ -53,7 +53,16 @@ export async function getOrCreateUser(
 ): Promise<{ ok: true; user: UserRecord } | { ok: false; error: string }> {
   const { data, error } = await supabaseAdmin
     .from("users")
-    .upsert({ phone }, { onConflict: "phone", ignoreDuplicates: false })
+    .upsert(
+      {
+        phone,
+        language: "es",
+        role: "citizen",
+        blocked: false,
+        metadata: {},
+      },
+      { onConflict: "phone", ignoreDuplicates: false },
+    )
     .select("id, phone, created_at")
     .single();
 
@@ -80,6 +89,7 @@ export async function getOrCreateUser(
  */
 export async function getOrCreateActiveSession(
   userId: string,
+  channel = "web",
 ): Promise<ActiveSession> {
   const now = new Date();
 
@@ -105,15 +115,23 @@ export async function getOrCreateActiveSession(
     };
   }
 
-  // Create a new conversation
+  // Create a new conversation — supply all NOT NULL columns
   const expiresAt = addHours(now, env.SESSION_TTL_HOURS);
 
   const { data: created, error: insertError } = await supabaseAdmin
     .from("conversations")
     .insert({
       user_id: userId,
+      channel,
       messages: [] as Message[],
+      language: "es",
+      status: "active",
+      priority: 2,
+      ai_enabled: true,
+      last_message_at: now.toISOString(),
+      context_keys: {},
       expires_at: expiresAt.toISOString(),
+      current_flow: null,
     })
     .select("id")
     .single();
@@ -145,7 +163,7 @@ export async function bumpSessionTtl(
     .from("conversations")
     .update({
       expires_at: expiresAt.toISOString(),
-      updated_at: new Date().toISOString(),
+      last_message_at: new Date().toISOString(),
     })
     .eq("id", conversationId);
 
@@ -170,7 +188,6 @@ export async function closeSession(
     .from("conversations")
     .update({
       expires_at: new Date(0).toISOString(),
-      updated_at: new Date().toISOString(),
     })
     .eq("id", conversationId);
 

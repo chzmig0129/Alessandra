@@ -22,7 +22,7 @@ import { SLOT_CONFIG } from "./slots";
 import { callCrearLead } from "./folio";
 import { analyzeImage } from "@/tools/shared/vision";
 import { lookupEmergencyContacts } from "@/tools/shared/emergency-contacts";
-import { isUrgentCategory, getRoutingArea } from "@/validation/taxonomy";
+import { isUrgentCategory } from "@/validation/taxonomy";
 
 // ---------------------------------------------------------------------------
 // Helper — emergency-contact shape for output schema
@@ -115,13 +115,13 @@ export const reporteSlotLlenar = createTool({
       .string()
       .min(1)
       .describe(
-        "Clave del slot a llenar, ej: 'categoria', 'tipo', 'descripcion', 'ubicacion', 'foto_url', 'confirmado'.",
+        "Clave del slot a llenar, ej: 'categoria', 'tipo', 'descripcion', 'ubicacion', 'fotos', 'confirmado'.",
       ),
     valor: z
       .unknown()
       .describe(
         "Valor del slot. Para 'ubicacion' puede ser {lat, lng} o {direccion_libre, colonia}. " +
-        "Para 'confirmado' debe ser un booleano. Para 'foto_url' una URL o el string 'sin_foto'.",
+        "Para 'confirmado' debe ser un booleano. Para 'fotos' un array de URLs o el string 'sin_foto'.",
       ),
   }),
   outputSchema: z.discriminatedUnion("ok", [
@@ -319,7 +319,7 @@ export const reporteConfirmarYCrear = createTool({
     // 3. Parse ubicacion
     let lat: number | null = null;
     let lng: number | null = null;
-    let colonia: string | null = null;
+    let locationAddress: string | null = null;
 
     const ubicacion = slots["ubicacion"];
     if (ubicacion !== null && typeof ubicacion === "object") {
@@ -327,37 +327,41 @@ export const reporteConfirmarYCrear = createTool({
       if (typeof u["lat"] === "number" && typeof u["lng"] === "number") {
         lat = u["lat"];
         lng = u["lng"];
-        if (typeof u["colonia"] === "string") colonia = u["colonia"];
-      } else if (
-        typeof u["direccion_libre"] === "string" &&
-        typeof u["colonia"] === "string"
-      ) {
-        colonia = u["colonia"];
+        // Use reverse-geocoded address if available, otherwise build from free-form fields
+        if (typeof u["location_address"] === "string") {
+          locationAddress = u["location_address"];
+        }
+      } else if (typeof u["direccion_libre"] === "string") {
+        // Free-form address: combine direccion_libre + colonia
+        const colonia = typeof u["colonia"] === "string" ? `, ${u["colonia"]}` : "";
+        locationAddress = `${u["direccion_libre"]}${colonia}`;
       }
     }
 
-    // 4. Parse photo
-    const rawFoto = slots["foto_url"];
-    const imageUrls: string[] =
-      typeof rawFoto === "string" && rawFoto !== "sin_foto" ? [rawFoto] : [];
+    // 4. Parse photos — slot key is 'fotos', an array of URLs or the literal "sin_foto"
+    const rawFotos = slots["fotos"];
+    let mediaUrls: string[] = [];
+    if (Array.isArray(rawFotos)) {
+      mediaUrls = rawFotos.filter((f): f is string => typeof f === "string");
+    }
+    // "sin_foto" scalar is simply ignored (empty array)
 
     // 5. Determine priority and routing area
     const urgent = isUrgentCategory(categoria, tipo);
     const priority = urgent ? 0 : 2;
-    const routingArea = await getRoutingArea(categoria, tipo);
 
     // 6. Call RPC
     const rpcResult = await callCrearLead({
-      p_user_id: user_id,
-      p_categoria: categoria,
-      p_tipo: tipo,
-      p_descripcion: descripcion,
-      p_lat: lat,
-      p_lng: lng,
-      p_colonia: colonia,
-      p_image_urls: imageUrls,
-      p_priority: priority,
-      p_assigned_to_area: routingArea ?? null,
+      conversation_id,
+      user_id,
+      category: categoria,
+      report_type: tipo || null,
+      report: descripcion,
+      lat,
+      lng,
+      location_address: locationAddress,
+      media_urls: mediaUrls,
+      priority,
     });
 
     if (!rpcResult.ok) {
@@ -415,43 +419,31 @@ export const reporteCancelar = createTool({
 });
 
 // ---------------------------------------------------------------------------
-// Lead row type for queries
+// Lead row type for queries — real public.leads column names
 // ---------------------------------------------------------------------------
 
 interface LeadRow {
-  id: string;
   folio: string;
   user_id: string;
-  categoria: string;
-  tipo: string;
-  descripcion: string;
-  estado: string;
+  category: string;
+  report_type: string | null;
+  status: string;
   priority: number;
   created_at: string;
-  updated_at: string;
-  lat: number | null;
-  lng: number | null;
-  colonia: string | null;
-  assigned_to_area: string | null;
-  image_urls: string[] | null;
+  location_address: string | null;
+  report: string;
 }
 
 const LeadSchema = z.object({
-  id: z.string(),
   folio: z.string(),
   user_id: z.string(),
-  categoria: z.string(),
-  tipo: z.string(),
-  descripcion: z.string(),
-  estado: z.string(),
+  category: z.string(),
+  report_type: z.string().nullable(),
+  status: z.string(),
   priority: z.number(),
   created_at: z.string(),
-  updated_at: z.string(),
-  lat: z.number().nullable(),
-  lng: z.number().nullable(),
-  colonia: z.string().nullable(),
-  assigned_to_area: z.string().nullable(),
-  image_urls: z.array(z.string()).nullable(),
+  location_address: z.string().nullable(),
+  report: z.string(),
 });
 
 // ---------------------------------------------------------------------------
@@ -486,7 +478,7 @@ export const reporteConsultar = createTool({
     let query = supabaseAdmin
       .from("leads")
       .select(
-        "id, folio, user_id, categoria, tipo, descripcion, estado, priority, created_at, updated_at, lat, lng, colonia, assigned_to_area, image_urls",
+        "folio, user_id, category, report_type, status, priority, created_at, location_address, report",
       )
       .eq("user_id", user_id);
 
@@ -556,7 +548,7 @@ export const reporteListarMios = createTool({
     const { data, error } = await supabaseAdmin
       .from("leads")
       .select(
-        "id, folio, user_id, categoria, tipo, descripcion, estado, priority, created_at, updated_at, lat, lng, colonia, assigned_to_area, image_urls",
+        "folio, user_id, category, report_type, status, priority, created_at, location_address, report",
       )
       .eq("user_id", user_id)
       .order("created_at", { ascending: false })

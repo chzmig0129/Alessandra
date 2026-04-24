@@ -10,25 +10,28 @@ import { supabaseAdmin } from "@/db/supabase-server";
 import { FolioSchema } from "@/validation/zod-schemas";
 
 // ---------------------------------------------------------------------------
-// Input types
+// Input types — parameter names match the SQL function's p_* params
 // ---------------------------------------------------------------------------
 
 export interface CrearLeadArgs {
-  p_user_id: string;
-  p_categoria: string;
-  p_tipo: string;
-  p_descripcion: string;
+  conversation_id: string;
+  user_id: string;
+  category: string;
+  report_type: string | null;
+  report: string;
   /** null when the user provided a free-form address instead of coordinates */
-  p_lat: number | null;
+  lat: number | null;
   /** null when the user provided a free-form address instead of coordinates */
-  p_lng: number | null;
-  p_colonia: string | null;
+  lng: number | null;
+  location_address: string | null;
   /** Array of photo URLs (empty array if none) */
-  p_image_urls: string[];
+  media_urls: string[];
   /** 0 = critical, 1 = high, 2 = normal (default), 3 = low, 4 = minimal */
-  p_priority?: number;
-  p_assigned_to_area?: string | null;
-  p_extra?: Record<string, unknown>;
+  priority: number;
+  severity?: string;
+  tags?: string[];
+  incident_subtype?: string;
+  ai_analysis?: object;
 }
 
 // ---------------------------------------------------------------------------
@@ -62,17 +65,20 @@ interface RpcRow {
 export async function callCrearLead(args: CrearLeadArgs): Promise<CrearLeadResult> {
   try {
     const { data, error } = await supabaseAdmin.rpc("crear_lead", {
-      p_user_id: args.p_user_id,
-      p_categoria: args.p_categoria,
-      p_tipo: args.p_tipo,
-      p_descripcion: args.p_descripcion,
-      p_lat: args.p_lat,
-      p_lng: args.p_lng,
-      p_colonia: args.p_colonia,
-      p_image_urls: args.p_image_urls,
-      p_priority: args.p_priority ?? 2,
-      p_assigned_to_area: args.p_assigned_to_area ?? null,
-      p_extra: args.p_extra ?? {},
+      p_conversation_id: args.conversation_id,
+      p_user_id: args.user_id,
+      p_category: args.category,
+      p_report_type: args.report_type,
+      p_report: args.report,
+      p_lat: args.lat,
+      p_lng: args.lng,
+      p_location_address: args.location_address,
+      p_media_urls: args.media_urls,
+      p_priority: args.priority,
+      p_severity: args.severity ?? null,
+      p_tags: args.tags ?? [],
+      p_incident_subtype: args.incident_subtype ?? null,
+      p_ai_analysis: args.ai_analysis ?? null,
     });
 
     if (error) {

@@ -1,5 +1,15 @@
 /**
  * Vision helper: analyzes images via Gemini with DB cache (SHA-256 key, 7-day TTL).
+ *
+ * Cache table: image_analysis_cache
+ * Real columns (2026-04-24 schema audit):
+ *   url_hash (PK, text), url (text), description (text), category (text),
+ *   is_obscene (bool), is_relevant (bool), hazard_level (text),
+ *   tags (jsonb), visible_elements (jsonb),
+ *   analyzed_at (timestamptz), expires_at (timestamptz)
+ *
+ * Cache lookup: eq('url_hash', hash) + expires_at > now()
+ * Cache write: upsert with onConflict:'url_hash'
  */
 
 import { createHash } from "node:crypto";
@@ -15,7 +25,10 @@ import { env } from "@/env";
 export interface ImageAnalysisResult {
   description: string;
   suggested_category?: string;
-  raw: string;
+  raw: {
+    tags?: unknown;
+    visible_elements?: unknown;
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -37,21 +50,26 @@ function sha256(input: string): string {
 
 interface CacheRow {
   description: string;
-  suggested_category: string | null;
-  raw: string;
+  category: string | null;
+  tags: unknown;
+  visible_elements: unknown;
+  expires_at: string | null;
 }
 
+/**
+ * Look up the cache by url_hash. Returns null on miss or expired entry.
+ * expires_at is compared server-side via .gte('expires_at', now).
+ */
 async function getFromCache(
-  imageHash: string,
+  urlHash: string,
 ): Promise<ImageAnalysisResult | null> {
+  const now = new Date().toISOString();
+
   const { data, error } = await supabaseAdmin
     .from("image_analysis_cache")
-    .select("description, suggested_category, raw")
-    .eq("image_sha256", imageHash)
-    .gte(
-      "created_at",
-      new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-    )
+    .select("description, category, tags, visible_elements, expires_at")
+    .eq("url_hash", urlHash)
+    .gte("expires_at", now)
     .limit(1)
     .maybeSingle();
 
@@ -60,36 +78,56 @@ async function getFromCache(
   const row = data as CacheRow;
   return {
     description: row.description,
-    suggested_category: row.suggested_category ?? undefined,
-    raw: row.raw,
+    suggested_category: row.category ?? undefined,
+    raw: {
+      tags: row.tags,
+      visible_elements: row.visible_elements,
+    },
   };
 }
 
+/**
+ * Persist a result to the cache. Uses upsert with onConflict:'url_hash'.
+ * expires_at = now + 7 days.
+ */
 async function saveToCache(
-  imageHash: string,
+  urlHash: string,
   imageUrl: string,
   result: ImageAnalysisResult,
+  parsedRaw: { tags?: unknown; visible_elements?: unknown },
 ): Promise<void> {
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
   await supabaseAdmin.from("image_analysis_cache").upsert(
     {
-      image_sha256: imageHash,
-      image_url: imageUrl,
+      url_hash: urlHash,
+      url: imageUrl,
       description: result.description,
-      suggested_category: result.suggested_category ?? null,
-      raw: { text: result.raw },
-      created_at: new Date().toISOString(),
+      category: result.suggested_category ?? null,
+      tags: parsedRaw.tags ?? null,
+      visible_elements: parsedRaw.visible_elements ?? null,
+      analyzed_at: now.toISOString(),
+      expires_at: expiresAt.toISOString(),
     },
-    { onConflict: "image_sha256" },
+    { onConflict: "url_hash" },
   );
 }
 
-function parseResponse(text: string): Omit<ImageAnalysisResult, "raw"> {
+function parseResponse(text: string): {
+  description: string;
+  suggested_category?: string;
+  tags?: unknown;
+  visible_elements?: unknown;
+} {
   const jsonMatch = text.match(/\{[\s\S]*\}/);
   if (jsonMatch) {
     try {
       const parsed = JSON.parse(jsonMatch[0]) as {
         description?: unknown;
         suggested_category?: unknown;
+        tags?: unknown;
+        visible_elements?: unknown;
       };
       if (typeof parsed.description === "string") {
         return {
@@ -99,6 +137,8 @@ function parseResponse(text: string): Omit<ImageAnalysisResult, "raw"> {
             parsed.suggested_category.length > 0
               ? parsed.suggested_category
               : undefined,
+          tags: parsed.tags,
+          visible_elements: parsed.visible_elements,
         };
       }
     } catch {
@@ -119,10 +159,10 @@ export async function analyzeImage(
   imageUrl: string,
   prompt?: string,
 ): Promise<ImageAnalysisResult> {
-  const imageHash = sha256(imageUrl);
+  const urlHash = sha256(imageUrl);
 
-  // 1. Try cache first
-  const cached = await getFromCache(imageHash);
+  // 1. Try cache first (url_hash PK, expires_at > now)
+  const cached = await getFromCache(urlHash);
   if (cached) return cached;
 
   // 2. Call Gemini Vision
@@ -144,12 +184,16 @@ export async function analyzeImage(
   // 3. Parse response
   const parsed = parseResponse(text);
   const result: ImageAnalysisResult = {
-    ...parsed,
-    raw: text,
+    description: parsed.description,
+    suggested_category: parsed.suggested_category,
+    raw: {
+      tags: parsed.tags,
+      visible_elements: parsed.visible_elements,
+    },
   };
 
-  // 4. Save to cache (fire-and-forget)
-  saveToCache(imageHash, imageUrl, result).catch(() => {
+  // 4. Save to cache (fire-and-forget — don't block caller on cache error)
+  saveToCache(urlHash, imageUrl, result, parsed).catch(() => {
     // ignore cache write errors
   });
 

@@ -15,11 +15,13 @@ ALTER TABLE conversations
   ADD COLUMN IF NOT EXISTS current_flow jsonb,
   ADD COLUMN IF NOT EXISTS expires_at   timestamptz;
 
--- Index to quickly find active conversations per user
--- (partial index: only rows where expires_at is in the future)
+-- Index to quickly find active conversations per user.
+-- Postgres requires immutable predicates for partial indexes, so we use
+-- `expires_at IS NOT NULL` (broader but still narrows out null-expires rows)
+-- instead of `expires_at > now()` (which is non-immutable and rejected).
 CREATE INDEX IF NOT EXISTS idx_conversations_user_active
   ON conversations (user_id, expires_at DESC)
-  WHERE expires_at > now();
+  WHERE expires_at IS NOT NULL;
 
 -- ---------------------------------------------------------------------------
 -- 2. Create unanswered_questions table
@@ -39,3 +41,7 @@ CREATE TABLE IF NOT EXISTS unanswered_questions (
                                ),
   created_at       timestamptz NOT NULL DEFAULT now()
 );
+
+-- Lock down: only service_role (which bypasses RLS) can read/write.
+-- We never expose this table via PostgREST anon/authenticated keys.
+ALTER TABLE public.unanswered_questions ENABLE ROW LEVEL SECURITY;
