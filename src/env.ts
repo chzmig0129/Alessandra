@@ -44,6 +44,11 @@ const envSchema = z.object({
   TWILIO_ACCOUNT_SID: z.string().optional(),
   TWILIO_AUTH_TOKEN: z.string().optional(),
   TWILIO_WHATSAPP_FROM: z.string().default("whatsapp:+14155238886"),
+  // Public base URL for the Twilio webhook (e.g. https://abc.trycloudflare.com).
+  // Required when running behind a tunnel or reverse proxy so that Twilio
+  // signature validation uses the public HTTPS URL Twilio signed, not the
+  // internal localhost URL that Next.js sees on req.url.
+  TWILIO_WEBHOOK_BASE_URL: z.string().url().optional(),
 
   // Node env — optional
   NODE_ENV: z

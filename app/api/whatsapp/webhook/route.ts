@@ -19,6 +19,38 @@ export const runtime = "nodejs";
 // Helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Reconstruct the canonical public URL that Twilio signed.
+ *
+ * Priority:
+ *  1. TWILIO_WEBHOOK_BASE_URL env var (explicit override — recommended for tunnels)
+ *  2. X-Forwarded-Proto + X-Forwarded-Host headers (injected by cloudflared/nginx)
+ *  3. req.url as last resort (works only when there is no proxy)
+ */
+function getPublicUrl(req: Request): string {
+  const reqUrl = new URL(req.url);
+
+  // 1. Explicit env override
+  const baseUrl = env.TWILIO_WEBHOOK_BASE_URL;
+  if (baseUrl) {
+    const base = new URL(baseUrl);
+    // Preserve the original pathname + search (e.g. /api/whatsapp/webhook)
+    base.pathname = reqUrl.pathname;
+    base.search = reqUrl.search;
+    return base.toString();
+  }
+
+  // 2. Forwarded headers (cloudflared, nginx, etc.)
+  const forwardedProto = req.headers.get("x-forwarded-proto");
+  const forwardedHost = req.headers.get("x-forwarded-host");
+  if (forwardedProto && forwardedHost) {
+    return `${forwardedProto}://${forwardedHost}${reqUrl.pathname}${reqUrl.search}`;
+  }
+
+  // 3. Last resort — use req.url as-is
+  return req.url;
+}
+
 /** Escape special XML characters to prevent malformed TwiML. */
 function escapeXml(text: string): string {
   return text
@@ -147,8 +179,9 @@ export async function POST(req: Request): Promise<Response> {
     }
   } else {
     const signatureHeader = req.headers.get("x-twilio-signature") ?? "";
-    // Reconstruct the exact URL Twilio signed
-    const requestUrl = req.url;
+    // Reconstruct the canonical public URL Twilio signed (public HTTPS URL,
+    // not the internal localhost URL visible on req.url behind a tunnel/proxy).
+    const requestUrl = getPublicUrl(req);
 
     const isValid = Twilio.validateRequest(authToken, signatureHeader, requestUrl, params);
     if (!isValid) {
