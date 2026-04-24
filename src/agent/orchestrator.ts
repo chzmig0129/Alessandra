@@ -381,10 +381,10 @@ export async function processTurn(
         typeof retryResult.text === "string" ? retryResult.text : "";
       const retryCitation = citationCheck(retryText, toolResults);
 
-      if (retryCitation.ok) {
+      if (retryCitation.ok && retryText.trim().length > 0) {
         finalText = retryText;
       } else {
-        // Both attempts failed citation check
+        // Both attempts failed citation check (or retryText was empty)
         finalText = CITATION_FAILURE_RESPONSE;
       }
     } catch (retryErr) {
@@ -416,6 +416,13 @@ export async function processTurn(
   // ---- 10. Return ----------------------------------------------------------
 
   const latencyMs = Date.now() - startedAt;
+
+  if (!finalText || finalText.trim().length === 0) {
+    console.warn("[orchestrator] finalText empty at return — falling back to CITATION_FAILURE_RESPONSE");
+    finalText = CITATION_FAILURE_RESPONSE;
+  }
+
+  console.info(`[orchestrator] returning text len=${finalText.length} latency_ms=${latencyMs}`);
 
   return {
     text: finalText,
