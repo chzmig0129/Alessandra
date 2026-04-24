@@ -1,23 +1,36 @@
 import { z } from "zod";
 
 const envSchema = z.object({
-  // Supabase — required
+  // Supabase — required at boot
   NEXT_PUBLIC_SUPABASE_URL: z.string().url(),
   NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1),
-  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
+  // Service role is needed by every server-side query but we accept empty here so
+  // dev server can boot. The supabase-server client throws on first use if missing.
+  SUPABASE_SERVICE_ROLE_KEY: z.string().default(""),
 
-  // AI providers — required
-  OPENAI_API_KEY: z.string().min(1),
-  GOOGLE_GENERATIVE_AI_API_KEY: z.string().min(1),
+  // OpenRouter — required (single endpoint for all model traffic)
+  OPENROUTER_API_KEY: z.string().min(1),
+  OPENROUTER_BASE_URL: z.string().url().default("https://openrouter.ai/api/v1"),
+
+  // OpenRouter analytics headers — optional with defaults
+  HTTP_REFERER: z.string().default("https://alcaldia-cuauhtemoc.local"),
+  APP_TITLE: z.string().default("Alessandra · Alcaldía Cuauhtémoc"),
+
+  // AI providers — now OPTIONAL (kept for direct-provider bypass if needed)
+  OPENAI_API_KEY: z.string().optional(),
+  GOOGLE_GENERATIVE_AI_API_KEY: z.string().optional(),
 
   // Supabase sandbox — optional
   SUPABASE_SANDBOX_DB_URL: z.string().url().optional(),
 
-  // Model overrides — optional with defaults
-  MODEL_CHAT: z.string().default("gpt-4o-mini"),
-  MODEL_EVAL: z.string().default("gpt-4o"),
-  MODEL_SQL: z.string().default("gemini-2.0-flash"),
-  MODEL_VISION: z.string().default("gemini-2.0-flash"),
+  // Model overrides — optional with defaults (OpenRouter slugs)
+  MODEL_ROUTER: z.string().default("openai/gpt-4o-mini"),
+  MODEL_MAIN: z.string().default("openai/gpt-4o-mini"),
+  MODEL_CHAT: z.string().default("openai/gpt-4o-mini"),
+  MODEL_EVAL: z.string().default("openai/gpt-4o"),
+  MODEL_SQL: z.string().default("openai/gpt-4o"),
+  MODEL_EXTRACTION: z.string().default("openai/gpt-4o-mini"),
+  MODEL_VISION: z.string().default("google/gemini-2.0-flash-exp:free"),
   MODEL_EMBEDDINGS: z.string().default("text-embedding-3-small"),
 
   // Session/flow config — optional with defaults

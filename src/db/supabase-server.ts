@@ -12,6 +12,12 @@ let _supabaseAdmin: SupabaseClient<Database> | undefined;
  * module-level singleton `supabaseAdmin`.
  */
 export function createServerClient(): SupabaseClient<Database> {
+  if (!env.SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error(
+      "SUPABASE_SERVICE_ROLE_KEY is empty. Copy it from Supabase Dashboard → " +
+        "Project Settings → API → service_role secret, then set it in .env.local.",
+    );
+  }
   return createClient<Database>(
     env.NEXT_PUBLIC_SUPABASE_URL,
     env.SUPABASE_SERVICE_ROLE_KEY,

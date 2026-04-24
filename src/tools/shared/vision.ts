@@ -13,10 +13,9 @@
  */
 
 import { createHash } from "node:crypto";
-import { google } from "@ai-sdk/google";
 import { generateText } from "ai";
+import { getModel } from "@/agent/model-config";
 import { supabaseAdmin } from "@/db/supabase-server";
-import { env } from "@/env";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -168,14 +167,17 @@ export async function analyzeImage(
   // 2. Call Gemini Vision
   const effectivePrompt = prompt ?? DEFAULT_PROMPT;
 
+  // Vision via OpenRouter: getModel('vision') uses google/gemini-2.0-flash-exp:free
+  // by default, which supports image inputs.  OpenRouter forwards the
+  // OpenAI-compat multimodal schema to the underlying Gemini endpoint.
   const { text } = await generateText({
-    model: google(env.MODEL_VISION),
+    model: getModel("vision"),
     messages: [
       {
         role: "user",
         content: [
-          { type: "image", image: new URL(imageUrl) },
           { type: "text", text: effectivePrompt },
+          { type: "image", image: new URL(imageUrl) },
         ],
       },
     ],
