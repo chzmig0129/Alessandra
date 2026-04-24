@@ -38,6 +38,13 @@ const envSchema = z.object({
   FLOW_TTL_MINUTES: z.coerce.number().int().positive().default(30),
   MAX_CONTEXT_MESSAGES: z.coerce.number().int().positive().default(20),
 
+  // Twilio — required for the WhatsApp webhook (/api/whatsapp/webhook).
+  // Marked optional at schema level so the dev server still boots on repos
+  // without Twilio configured; the webhook route re-checks at request time.
+  TWILIO_ACCOUNT_SID: z.string().optional(),
+  TWILIO_AUTH_TOKEN: z.string().optional(),
+  TWILIO_WHATSAPP_FROM: z.string().default("whatsapp:+14155238886"),
+
   // Node env — optional
   NODE_ENV: z
     .enum(["development", "test", "production"])
