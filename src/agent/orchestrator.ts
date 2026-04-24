@@ -305,18 +305,44 @@ export async function processTurn(
     return { text: "Tuve un problema técnico, intenta de nuevo." };
   }
 
-  const rawText: string = typeof agentResult.text === "string" ? agentResult.text : "";
+  const topLevelText: string = typeof agentResult.text === "string" ? agentResult.text : "";
   // Mastra's GenerateTextResult exposes top-level toolCalls/toolResults only for
   // the LAST step. To get every tool invocation across multi-step runs, walk
   // `steps[]` (each step has its own toolCalls/toolResults arrays).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const allSteps: any[] = Array.isArray(agentResult.steps) ? agentResult.steps : [];
+
+  // Mastra a veces deja .text vacío cuando el run terminó por maxSteps o por un
+  // tool call final sin follow-up. Buscar el último step con texto no vacío.
+  const stepTexts: string[] = allSteps
+    .map((s) => (typeof s?.text === "string" ? s.text.trim() : ""))
+    .filter((t) => t.length > 0);
+  const lastStepText: string = stepTexts.length > 0 ? stepTexts[stepTexts.length - 1] ?? "" : "";
+
   const toolCalls: unknown[] =
     allSteps.length > 0
       ? allSteps.flatMap((s) => (Array.isArray(s.toolCalls) ? s.toolCalls : []))
       : Array.isArray(agentResult.toolCalls)
         ? agentResult.toolCalls
         : [];
+
+  let rawText = topLevelText.trim().length > 0 ? topLevelText : lastStepText;
+
+  if (rawText.trim().length === 0) {
+    console.warn(
+      "[orchestrator] empty rawText — agentResult shape:",
+      JSON.stringify({
+        hasTopLevelText: typeof agentResult.text === "string",
+        topLevelTextLen: (agentResult.text ?? "").length,
+        stepsCount: allSteps.length,
+        stepsWithText: stepTexts.length,
+        finishReason: agentResult.finishReason,
+        toolCallsCount: toolCalls.length,
+      }),
+    );
+    rawText =
+      "Estoy procesando tu consulta pero no pude redactar la respuesta. ¿Puedes repetir la pregunta con otras palabras?";
+  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const usage: any = agentResult.usage ?? null;
 

@@ -162,7 +162,7 @@ async function processInBackground(
   try {
     await sendWhatsAppMessages(to, chunks);
     console.info(
-      `[whatsapp/webhook] background done: ${chunks.length} chunks sent to ${to}`,
+      `[whatsapp/webhook] background done: sent response to ${to}`,
     );
   } catch (err) {
     console.error("[whatsapp/webhook] sendWhatsAppMessages failed:", err);

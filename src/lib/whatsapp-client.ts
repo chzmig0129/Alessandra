@@ -35,9 +35,14 @@ export async function sendWhatsAppMessages(
   to: string,
   bodies: string[],
 ): Promise<void> {
+  const nonEmpty = bodies.filter((b) => b && b.trim().length > 0);
+  if (nonEmpty.length === 0) {
+    const err = new Error("sendWhatsAppMessages called with no non-empty bodies");
+    console.warn("[whatsapp-client] refusing to send: all bodies empty/whitespace");
+    throw err;
+  }
   const client = getClient();
-  for (const body of bodies) {
-    if (!body || body.trim().length === 0) continue;
+  for (const body of nonEmpty) {
     const msg = await client.messages.create({
       from: env.TWILIO_WHATSAPP_FROM,
       to,
