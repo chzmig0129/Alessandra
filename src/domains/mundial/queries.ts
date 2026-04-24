@@ -64,6 +64,10 @@ export interface PartidoRow {
   marcador_a: number | null;
   /** @deprecated Use `goles_visitante` — kept for backward compat. */
   marcador_b: number | null;
+  /** Flag emoji for team A, e.g. "🇲🇽". Null when not available. */
+  bandera_a: string | null;
+  /** Flag emoji for team B, e.g. "🇿🇦". Null when not available. */
+  bandera_b: string | null;
 }
 
 export interface SedeRow {
@@ -230,6 +234,8 @@ function toPartidoRow(raw: Record<string, unknown>): PartidoRow {
     sede_estadio: sede_nombre,
     marcador_a: goles_local,
     marcador_b: goles_visitante,
+    bandera_a: (r["bandera_a"] ?? null) as string | null,
+    bandera_b: (r["bandera_b"] ?? null) as string | null,
   };
 }
 

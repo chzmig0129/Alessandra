@@ -113,6 +113,8 @@ export const mundialPartidosBuscar = createTool({
           marcador_b: z.number().nullable(),
           rank_a: z.number().nullable(),
           rank_b: z.number().nullable(),
+          bandera_a: z.string().nullable(),
+          bandera_b: z.string().nullable(),
           readable: z.string(),
           display: z.string(),
         }),
@@ -183,6 +185,8 @@ export const mundialPartidosBuscar = createTool({
       marcador_b: row.marcador_b,
       rank_a: row.rank_a,
       rank_b: row.rank_b,
+      bandera_a: row.bandera_a,
+      bandera_b: row.bandera_b,
       readable: partidoToReadable(row),
       display: partidoToDisplay(row),
     }));

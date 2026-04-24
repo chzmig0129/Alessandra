@@ -68,8 +68,8 @@ function teamLabel(
 // ---------------------------------------------------------------------------
 
 export function partidoToReadable(row: PartidoRow): string {
-  const teamA = teamLabel(row.equipo_a_codigo, row.equipo_a_nombre, row.equipo_a_desc);
-  const teamB = teamLabel(row.equipo_b_codigo, row.equipo_b_nombre, row.equipo_b_desc);
+  const teamA = teamLabel(row.equipo_a_codigo, row.equipo_a_nombre, row.equipo_a_desc, row.bandera_a);
+  const teamB = teamLabel(row.equipo_b_codigo, row.equipo_b_nombre, row.equipo_b_desc, row.bandera_b);
   const fecha = formatFechaCdmx(row.fecha_hora_cdmx);
   const sede = row.sede_estadio
     ? `${row.sede_estadio}, ${row.sede_ciudad ?? ""}`
@@ -107,8 +107,8 @@ export function partidoToReadable(row: PartidoRow): string {
 // ---------------------------------------------------------------------------
 
 export function partidoToDisplay(row: PartidoRow): string {
-  const teamA = teamLabel(row.equipo_a_codigo, row.equipo_a_nombre, row.equipo_a_desc);
-  const teamB = teamLabel(row.equipo_b_codigo, row.equipo_b_nombre, row.equipo_b_desc);
+  const teamA = teamLabel(row.equipo_a_codigo, row.equipo_a_nombre, row.equipo_a_desc, row.bandera_a);
+  const teamB = teamLabel(row.equipo_b_codigo, row.equipo_b_nombre, row.equipo_b_desc, row.bandera_b);
   const rankA = row.rank_a ? ` (FIFA #${row.rank_a})` : "";
   const rankB = row.rank_b ? ` (FIFA #${row.rank_b})` : "";
 
