@@ -12,6 +12,7 @@ import Twilio from "twilio";
 import { env } from "@/env";
 import { getOrCreateUser, getOrCreateActiveSession } from "@/memory/session";
 import { processTurn } from "@/agent/orchestrator";
+import { mdToWhatsApp } from "@/lib/whatsapp-format";
 
 export const runtime = "nodejs";
 
@@ -293,5 +294,5 @@ export async function POST(req: Request): Promise<Response> {
 
   // ---- 9. Return TwiML -------------------------------------------------------
 
-  return twimlResponse(responseText);
+  return twimlResponse(mdToWhatsApp(responseText));
 }
