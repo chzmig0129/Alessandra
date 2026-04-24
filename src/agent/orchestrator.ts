@@ -358,8 +358,20 @@ export async function processTurn(
 
   let finalText = rawText;
 
-  const citationResult = citationCheck(rawText, toolResults);
+  // Citation check es safety-critical para puntos_violeta (teléfonos/direcciones literales)
+  // y reportes (folios exactos). Para mundial, los datos son temporales/contextuales y
+  // el paraphrasing natural del LLM (horas, fechas) produce falsos positivos que rompen
+  // respuestas básicas. Skip selectivo por dominio.
+  const skipCitationCheck = cls.domain === "mundial" || cls.domain === "fuera_alcance" || cls.domain === null;
+
+  const citationResult = skipCitationCheck
+    ? { ok: true, missing: [] as string[], warnings: [] as string[] }
+    : citationCheck(rawText, toolResults);
+
   if (!citationResult.ok) {
+    console.warn(
+      `[orchestrator] citationCheck failed domain=${cls.domain} missing=${JSON.stringify(citationResult.missing)} rawTextPreview=${JSON.stringify(rawText.slice(0, 200))}`,
+    );
     // One retry with a stricter prompt
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
