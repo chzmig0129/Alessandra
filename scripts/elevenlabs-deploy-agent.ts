@@ -139,6 +139,7 @@ const agentConfig = {
     },
     tts: {
       voice_id: VOICE_ID,
+      model_id: "eleven_flash_v2_5",
     },
   },
 };
