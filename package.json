@@ -9,7 +9,8 @@
     "eval": "tsx tests/eval/runner.ts",
     "test": "vitest run",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "elevenlabs:deploy": "tsx scripts/elevenlabs-deploy-agent.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^1.0.0",
