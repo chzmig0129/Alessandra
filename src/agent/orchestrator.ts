@@ -657,7 +657,67 @@ export async function processTurn(
     finalText = CITATION_FAILURE_RESPONSE;
   }
 
-  console.info(`[orchestrator] returning text len=${finalText.length} latency_ms=${latencyMs}`);
+  // ---- Structured turn logging ---------------------------------------------
+  {
+    const uid8 = input.userId.slice(0, 8);
+    const cid8 = conversationId.slice(0, 8);
+    const msgPreview = input.userMessage.slice(0, 80);
+    console.info(`[turn] user=${uid8} conv=${cid8} msg="${msgPreview}"`);
+    console.info(`[turn]   classify: domain=${cls.domain} conf=${cls.confidence} reason=${cls.reason}`);
+
+    // Build a map from toolCallId → toolResult for pairing
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const resultById = new Map<string, any>();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const resultsByIndex: any[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const tr of toolResults as any[]) {
+      if (tr && typeof tr.toolCallId === "string") {
+        resultById.set(tr.toolCallId, tr);
+      }
+      resultsByIndex.push(tr);
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (toolCalls as any[]).forEach((tc: any, idx: number) => {
+      const name: string = tc?.toolName ?? tc?.name ?? "unknown";
+      const args = tc?.args ?? tc?.input ?? {};
+      const argsJson = JSON.stringify(args).slice(0, 200);
+
+      // Pair with result: prefer by toolCallId, fall back to index
+      const tr =
+        (tc?.toolCallId && resultById.has(tc.toolCallId)
+          ? resultById.get(tc.toolCallId)
+          : resultsByIndex[idx]) ?? null;
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const result: any = tr?.result ?? tr;
+      let resultSummary: string;
+      if (result !== null && result !== undefined && typeof result === "object" && "ok" in result) {
+        if (result.ok === true) {
+          if (Array.isArray(result.rows)) {
+            resultSummary = `ok ${result.rows.length} rows`;
+          } else if (Array.isArray(result.data)) {
+            resultSummary = `ok ${result.data.length} rows`;
+          } else {
+            resultSummary = "ok";
+          }
+        } else {
+          const errMsg: string = typeof result.error === "string" ? result.error : "unknown";
+          resultSummary = `error: ${errMsg.slice(0, 100)}`;
+        }
+      } else {
+        resultSummary = "returned";
+      }
+
+      console.info(`[turn]   tool_call ${name}(${argsJson}) → ${resultSummary}`);
+    });
+
+    const finalPreview = finalText.slice(0, 120);
+    const tokensIn = usage?.inputTokens ?? 0;
+    const tokensOut = usage?.outputTokens ?? 0;
+    console.info(`[turn]   final: "${finalPreview}" latency=${latencyMs}ms tokens=${tokensIn}/${tokensOut}`);
+  }
 
   return {
     text: finalText,
