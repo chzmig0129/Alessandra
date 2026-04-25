@@ -24,13 +24,13 @@ const envSchema = z.object({
   SUPABASE_SANDBOX_DB_URL: z.string().url().optional(),
 
   // Model overrides — optional with defaults (OpenRouter slugs)
-  MODEL_ROUTER: z.string().default("openai/gpt-4o-mini"),
-  MODEL_MAIN: z.string().default("openai/gpt-4o-mini"),
-  MODEL_CHAT: z.string().default("openai/gpt-4o-mini"),
-  MODEL_EVAL: z.string().default("openai/gpt-4o"),
-  MODEL_SQL: z.string().default("openai/gpt-4o"),
-  MODEL_EXTRACTION: z.string().default("openai/gpt-4o-mini"),
-  MODEL_VISION: z.string().default("google/gemini-2.0-flash-exp:free"),
+  MODEL_ROUTER: z.string().default("google/gemini-2.5-flash"),
+  MODEL_MAIN: z.string().default("google/gemini-2.5-flash"),
+  MODEL_CHAT: z.string().default("google/gemini-2.5-flash"),
+  MODEL_EVAL: z.string().default("google/gemini-2.5-pro"),
+  MODEL_SQL: z.string().default("google/gemini-2.5-pro"),
+  MODEL_EXTRACTION: z.string().default("google/gemini-2.5-flash"),
+  MODEL_VISION: z.string().default("google/gemini-2.5-flash-lite"),
   MODEL_EMBEDDINGS: z.string().default("text-embedding-3-small"),
 
   // Session/flow config — optional with defaults
