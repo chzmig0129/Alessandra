@@ -295,6 +295,8 @@ export const reporteSlotLlenar = createTool({
       ok: z.literal(true),
       next_state: z.string(),
       next_prompt: z.string().optional(),
+      effective_value: z.unknown().optional(),
+      note: z.string().optional(),
     }),
     z.object({
       ok: z.literal(false),
@@ -329,6 +331,9 @@ export const reporteSlotLlenar = createTool({
     // Override fotos/ubicacion from canonical attachments — the LLM cannot
     // overwrite an actual uploaded image with "sin_foto" or an empty value.
     // Priority: AsyncLocalStorage (turn context) > Mastra RequestContext
+    let fotosOverrideApplied = false;
+    let ubicacionOverrideApplied = false;
+
     if (slot === "fotos") {
       const alsImageUrl = getTurnContext()?.attachments?.imageUrl;
       const rcImageUrl = ctx?.requestContext?.has("image_url")
@@ -346,6 +351,7 @@ export const reporteSlotLlenar = createTool({
           );
         }
         decodedValor = [canonicalImageUrl];
+        fotosOverrideApplied = true;
       }
     } else if (slot === "ubicacion") {
       const alsLat = getTurnContext()?.attachments?.lat;
@@ -371,6 +377,7 @@ export const reporteSlotLlenar = createTool({
           );
         }
         decodedValor = { lat: canonicalLat, lng: canonicalLng };
+        ubicacionOverrideApplied = true;
       }
     }
 
@@ -448,11 +455,27 @@ export const reporteSlotLlenar = createTool({
     const nextSlotInfo = nextRequiredSlot(nextState, freshSlots);
     const nextPrompt = nextSlotInfo?.prompt;
 
-    return {
+    const baseResponse = {
       ok: true as const,
       next_state: nextState,
       ...(nextPrompt !== undefined ? { next_prompt: nextPrompt } : {}),
     };
+
+    if (fotosOverrideApplied) {
+      return {
+        ...baseResponse,
+        effective_value: decodedValor,
+        note: 'FOTO_ADJUNTA: el slot fotos fue persistido con la imagen REAL subida por el usuario (URL del bucket). En CUALQUIER resumen que muestres al usuario, narra "Fotos: ✅ adjunta" o "Foto: sí" — NUNCA digas "Sin fotos" porque sí hay foto. REPETIR: NO digas Sin fotos.',
+      };
+    }
+    if (ubicacionOverrideApplied) {
+      return {
+        ...baseResponse,
+        effective_value: decodedValor,
+        note: 'UBICACION_GPS: el slot ubicacion fue persistido con las coordenadas GPS reales del CONTEXT. En el resumen, usa esas coordenadas exactas.',
+      };
+    }
+    return baseResponse;
   },
 });
 
