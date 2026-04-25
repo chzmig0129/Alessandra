@@ -62,11 +62,13 @@ export type ModelTask = "router" | "main" | "sql" | "extraction" | "vision";
  *   main       → MODEL_MAIN       → openai/gpt-4o-mini
  *   sql        → MODEL_SQL        → openai/gpt-4o
  *   extraction → MODEL_EXTRACTION → openai/gpt-4o-mini
- *   vision     → MODEL_VISION     → google/gemini-2.0-flash-exp:free
+ *   vision     → MODEL_VISION     → google/gemini-2.5-flash-lite
  *
  * Note: not all OpenRouter models support vision (image inputs).
- * The default MODEL_VISION (google/gemini-2.0-flash-exp:free) does.
+ * The default MODEL_VISION (google/gemini-2.5-flash-lite) does.
  * If you swap to a non-vision model here vision.ts calls will fail.
+ * (The previous default `google/gemini-2.0-flash-exp:free` was retired by
+ * OpenRouter and now returns 404 — do not revert.)
  */
 export function getModel(task: ModelTask) {
   switch (task) {
