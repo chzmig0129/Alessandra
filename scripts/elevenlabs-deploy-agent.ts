@@ -106,6 +106,7 @@ const tools: ServerTool[] = VOICE_TOOL_SCHEMAS.map((t) => ({
     request_headers: {
       Authorization: `Bearer ${TOOLS_BEARER}`,
       "Content-Type": "application/json",
+      "X-Caller-Phone": "{{system__caller_id}}",
     },
     request_body_schema: {
       type: "object" as const,

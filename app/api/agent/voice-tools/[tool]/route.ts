@@ -113,13 +113,27 @@ export async function POST(
   }
 
   // ---- 5. Resolve user_id ---------------------------------------------------
+  //
+  // Resolution chain (highest → lowest priority):
+  //   1. body.user_id  — direct UUID, skip phone lookup entirely
+  //   2. body.phone    — E.164 phone in body (legacy callers)
+  //   3. x-caller-phone header — injected by ElevenLabs via {{system__caller_id}}
+  //   4. synthetic fallback — "voice:anon-<conversation_id|uuid>" so read-only
+  //      tools (mundial, knowledge, puntos) still work without a real identity
 
   let userId: string;
 
   if (body.user_id) {
     userId = body.user_id;
-  } else if (body.phone) {
-    const userResult = await getOrCreateUser(body.phone);
+  } else {
+    // Resolve phone from body, then header, then synthesize
+    const callerPhoneHeader = req.headers.get("x-caller-phone");
+    const phone =
+      body.phone ||
+      callerPhoneHeader ||
+      `voice:anon-${body.conversation_id ?? crypto.randomUUID().slice(0, 8)}`;
+
+    const userResult = await getOrCreateUser(phone);
     if (!userResult.ok) {
       return NextResponse.json(
         { ok: false, error: `Failed to resolve user: ${userResult.error}` },
@@ -127,11 +141,6 @@ export async function POST(
       );
     }
     userId = userResult.user.id;
-  } else {
-    return NextResponse.json(
-      { ok: false, error: "Body must include user_id or phone" },
-      { status: 400 },
-    );
   }
 
   // ---- 6. Resolve conversation_id -------------------------------------------
