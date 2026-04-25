@@ -679,6 +679,22 @@ export const reporteConfirmarYCrear = createTool({
       }
     }
 
+    // Reverse geocode si tenemos coords pero no dirección textual — para que el
+    // dashboard muestre algo legible en lugar de "—". Cache de 30 días en
+    // location_label_cache, así que repeticiones son baratas. Failure es soft:
+    // dejamos location_address null y el lead se crea igual.
+    if (lat !== null && lng !== null && locationAddress === null) {
+      try {
+        const { nominatimReverseGeocode } = await import("@/tools/shared/geocoding");
+        const geo = await nominatimReverseGeocode(lat, lng);
+        if (geo.label_completo && geo.label_completo !== `${lat},${lng}`) {
+          locationAddress = geo.label_completo;
+        }
+      } catch (err) {
+        console.warn("[reportes] reverse geocode failed:", err);
+      }
+    }
+
     // 4. Parse photos — slot key is 'fotos', an array of URLs or the literal "sin_foto"
     const rawFotos = slots["fotos"];
     let mediaUrls: string[] = [];
