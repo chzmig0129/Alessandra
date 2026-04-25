@@ -352,7 +352,19 @@ export async function processTurn(
 
   // ---- 4. Domain classification --------------------------------------------
 
-  const cls = await classifyDomain(input.userMessage, flow);
+  let cls = await classifyDomain(input.userMessage, flow);
+
+  // Image-describe bias: if the user attached an image and is asking about its
+  // content but the router returned null / fuera_alcance, nudge domain to
+  // 'reportes' at medium confidence so the LLM sees reporte_analizar_imagen in
+  // its tool belt and uses it.  Does NOT override a strong domain signal.
+  if (
+    (cls.domain === "fuera_alcance" || cls.confidence < 0.5) &&
+    input.attachments?.imageUrl &&
+    /describ|analiz|identific|qu[eé] hay|qu[eé] es esto|qu[eé] muestra/i.test(input.userMessage)
+  ) {
+    cls = { domain: "reportes", confidence: 0.5, reason: "image_describe_bias" };
+  }
 
   // ---- 5. System prompt ----------------------------------------------------
 

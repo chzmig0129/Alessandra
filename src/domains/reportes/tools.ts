@@ -444,9 +444,9 @@ export const reporteSlotLlenar = createTool({
 export const reporteAnalizarImagen = createTool({
   id: "reporte_analizar_imagen",
   description:
-    "Analiza una imagen usando visión por computadora y devuelve una descripción y categoría sugerida. " +
-    "NO muta el flujo — solo propone. El orquestador decide si usar los resultados. " +
-    "Úsala cuando el usuario adjunta una foto para ayudar a identificar la categoría del problema. " +
+    "Analiza una imagen usando visión por computadora (Gemini). Devuelve descripción + categoría sugerida si aplica. " +
+    "Úsala SIEMPRE que el usuario adjunte una imagen y quiera saber qué muestra (pregunte \"qué hay\", \"descríbela\", \"analízala\", \"identifícala\") — NO está limitada al flujo de reportes. " +
+    "También úsala dentro del flujo de reportes para sugerir la categoría correcta. NO muta el flujo. " +
     "Ejemplo: el usuario envía foto de un bache → devuelve description='Bache profundo en calzada' y suggested_category='baches'.",
   inputSchema: z.object({
     image_url: z
