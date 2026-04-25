@@ -17,6 +17,7 @@
  */
 
 import { supabaseAdmin } from "@/db/supabase-server";
+import { googleMapsDirectionsUrl } from "@/lib/geo";
 
 // ---------------------------------------------------------------------------
 // Row types (match v_puntos_violeta view columns per F1 rewrite)
@@ -51,9 +52,10 @@ export interface PuntoVioletaRow {
   active: boolean;
 }
 
-// Extended row that may include distance_km when lat/lng filter is applied
+// Extended row that may include distance_km and maps_url when lat/lng filter is applied
 export interface PuntoVioletaRowWithDistance extends PuntoVioletaRow {
   distance_km?: number;
+  maps_url?: string;
   _horario_unknown?: boolean;
 }
 
@@ -369,6 +371,10 @@ export async function fetchPuntosVioleta(
       .map((row) => ({
         ...row,
         distance_km: haversineKm(origin, {
+          lat: row.lat as number,
+          lng: row.lng as number,
+        }),
+        maps_url: googleMapsDirectionsUrl(origin, {
           lat: row.lat as number,
           lng: row.lng as number,
         }),

@@ -82,6 +82,7 @@ export const puntosVioletaBuscar = createTool({
           tipo_atencion: z.string().nullable(),
           atencion_24_7: z.boolean(),
           distance_km: z.number().optional(),
+          maps_url: z.string().optional(),
           _horario_unknown: z.boolean().optional(),
         }),
       ),
@@ -135,6 +136,7 @@ export const puntosVioletaBuscar = createTool({
       tipo_atencion: row.tipo_atencion,
       atencion_24_7: row.atencion_24_7,
       distance_km: row.distance_km,
+      maps_url: row.maps_url,
       _horario_unknown: row._horario_unknown,
     }));
 
