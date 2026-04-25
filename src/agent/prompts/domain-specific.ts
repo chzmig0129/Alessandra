@@ -17,7 +17,15 @@ import type { Domain } from "@/types";
 export function domainHint(domain: Domain, confidence: number): string {
   const langReminder = ' Reply in the same language as the user message above (es/en/pt/fr/it).';
   if (domain == null || domain === 'fuera_alcance') {
-    return '\n\n[INTERNAL ROUTING HINT: classifier did not identify a clear domain. If the user is asking about Mundial FIFA 2026, Puntos Violeta, or citizen reports, invoke the corresponding tool anyway before declining. If confirmed off-topic, redirect with the canonical phrase.' + langReminder + ']';
+    return `\n\n[INTERNAL ROUTING HINT: classifier did not identify a clear domain.
+
+OBLIGATORIO antes de declinar o decir "no tengo información":
+1. Invoca knowledge_buscar({query: "<pregunta del usuario tal cual>"}) — la base tiene 329 documentos curados sobre Cuauhtémoc/CDMX (museos, gastronomía, salud, deportes, números de emergencia, trámites detallados, eventos, info_general). Datos como "número de Base Diana", "qué museos visitar", "requisitos del trámite X" están AHÍ.
+2. Si knowledge_buscar devuelve resultados con similarity > 0.4, redacta usando content_snippet (NO summary — los datos concretos como teléfonos están en content_snippet).
+3. Si knowledge_buscar devuelve vacío o irrelevante, intenta consulta_analitica_sql como segundo fallback.
+4. Solo si AMBOS fallback están vacíos, usa la frase canónica de redirección.
+
+NO declines en el primer turno sin haber invocado knowledge_buscar al menos una vez.${langReminder}]`;
   }
   if (domain === 'mundial') {
     return `\n\n[INTERNAL ROUTING HINT: likely domain=mundial, confidence=${confidence.toFixed(2)}. Confirm by invoking a mundial_* tool.${langReminder}
