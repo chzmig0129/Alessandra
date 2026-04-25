@@ -24,7 +24,10 @@ import {
   fetchFanFest,
   fetchPartidoDetalle,
   fetchEquipo,
+  fetchSedeById,
+  fetchFanFestById,
 } from "./queries";
+import { haversineKm, googleMapsDirectionsUrl } from "@/lib/geo";
 import {
   partidoToReadable,
   partidoToDisplay,
@@ -629,6 +632,116 @@ export const mundialEquipoInfo = createTool({
 });
 
 // ---------------------------------------------------------------------------
+// 6. mundial_como_llegar
+// ---------------------------------------------------------------------------
+
+export const mundialComoLlegar = createTool({
+  id: "mundial_como_llegar",
+  description:
+    "Calcula la ruta en Google Maps desde la ubicación del usuario hasta una sede del Mundial (estadio) o un Fan Fest. " +
+    "Si no tienes lat/lng del usuario, NO llames esta tool — primero pídele que comparta su ubicación.",
+  inputSchema: z.object({
+    tipo: z
+      .enum(["sede", "fan_fest"])
+      .describe("Tipo de destino: 'sede' para estadios, 'fan_fest' para Fan Festivals."),
+    destino_id: z
+      .number()
+      .int()
+      .positive()
+      .describe("ID numérico del destino en v_mundial_sedes o v_mundial_fan_fest."),
+    lat: z.number().describe("Latitud del usuario (WGS84)."),
+    lng: z.number().describe("Longitud del usuario (WGS84)."),
+  }),
+  outputSchema: z.discriminatedUnion("ok", [
+    z.object({
+      ok: z.literal(true),
+      destino: z.object({
+        nombre: z.string(),
+        direccion: z.string().nullable().optional(),
+        lat: z.number(),
+        lng: z.number(),
+        ciudad: z.string().nullable().optional(),
+      }),
+      distance_km: z.number(),
+      maps_url: z.string(),
+      note: z.string().optional(),
+    }),
+    z.object({
+      ok: z.literal(false),
+      error: z.string(),
+    }),
+  ]),
+  execute: async ({
+    tipo,
+    destino_id,
+    lat,
+    lng,
+  }: {
+    tipo: "sede" | "fan_fest";
+    destino_id: number;
+    lat: number;
+    lng: number;
+  }) => {
+    // Validate user coordinates
+    if (!isFinite(lat) || !isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      return { ok: false as const, error: "coordenadas inválidas" };
+    }
+
+    if (tipo === "sede") {
+      const { data, error } = await fetchSedeById(destino_id);
+      if (error) return { ok: false as const, error };
+      if (!data) return { ok: false as const, error: "destino no encontrado" };
+      if (data.latitud === null || data.longitud === null) {
+        return { ok: false as const, error: "destino sin coordenadas registradas" };
+      }
+
+      const origin = { lat, lng };
+      const destination = { lat: data.latitud, lng: data.longitud };
+      const distance_km = Math.round(haversineKm(origin, destination) * 10) / 10;
+      const maps_url = googleMapsDirectionsUrl(origin, destination);
+
+      return {
+        ok: true as const,
+        destino: {
+          nombre: data.nombre,
+          direccion: data.direccion,
+          lat: data.latitud,
+          lng: data.longitud,
+          ciudad: data.ciudad,
+        },
+        distance_km,
+        maps_url,
+      };
+    } else {
+      const { data, error } = await fetchFanFestById(destino_id);
+      if (error) return { ok: false as const, error };
+      if (!data) return { ok: false as const, error: "destino no encontrado" };
+      if (data.latitud === null || data.longitud === null) {
+        return { ok: false as const, error: "destino sin coordenadas registradas" };
+      }
+
+      const origin = { lat, lng };
+      const destination = { lat: data.latitud, lng: data.longitud };
+      const distance_km = Math.round(haversineKm(origin, destination) * 10) / 10;
+      const maps_url = googleMapsDirectionsUrl(origin, destination);
+
+      return {
+        ok: true as const,
+        destino: {
+          nombre: data.nombre,
+          direccion: data.ubicacion,
+          lat: data.latitud,
+          lng: data.longitud,
+          ciudad: data.ciudad,
+        },
+        distance_km,
+        maps_url,
+      };
+    }
+  },
+});
+
+// ---------------------------------------------------------------------------
 // Re-export all tools as a named group for easy registration in orchestrator
 // ---------------------------------------------------------------------------
 
@@ -638,4 +751,5 @@ export const mundialTools = {
   mundialFanFest,
   mundialPartidoDetalle,
   mundialEquipoInfo,
+  mundialComoLlegar,
 } as const;

@@ -426,6 +426,38 @@ export async function fetchPartidoDetalle(
 }
 
 // ---------------------------------------------------------------------------
+// fetchSedeById
+// ---------------------------------------------------------------------------
+
+export async function fetchSedeById(
+  id: number,
+): Promise<{ data: SedeRow | null; error: string | null }> {
+  const { data, error } = await supabaseAdmin
+    .from("v_mundial_sedes")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) return { data: null, error: error.message };
+  return { data: data as SedeRow | null, error: null };
+}
+
+// ---------------------------------------------------------------------------
+// fetchFanFestById
+// ---------------------------------------------------------------------------
+
+export async function fetchFanFestById(
+  id: number,
+): Promise<{ data: FanFestRow | null; error: string | null }> {
+  const { data, error } = await supabaseAdmin
+    .from("v_mundial_fan_fest")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) return { data: null, error: error.message };
+  return { data: data as FanFestRow | null, error: null };
+}
+
+// ---------------------------------------------------------------------------
 // fetchEquipo
 // ---------------------------------------------------------------------------
 

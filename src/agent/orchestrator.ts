@@ -54,6 +54,7 @@ import {
   mundialFanFest,
   mundialPartidoDetalle,
   mundialEquipoInfo,
+  mundialComoLlegar,
 } from "@/domains/mundial/tools";
 import {
   reporteIniciar,
@@ -107,12 +108,13 @@ const CITATION_RETRY_SUFFIX =
 // ---------------------------------------------------------------------------
 
 const ALL_TOOLS = {
-  // Mundial (5)
+  // Mundial (6)
   mundial_partidos_buscar: mundialPartidosBuscar,
   mundial_sede_info: mundialSedeInfo,
   mundial_fan_fest: mundialFanFest,
   mundial_partido_detalle: mundialPartidoDetalle,
   mundial_equipo_info: mundialEquipoInfo,
+  mundial_como_llegar: mundialComoLlegar,
   // Puntos Violeta (2 + emergency)
   puntos_violeta_buscar: puntosVioletaBuscar,
   puntos_violeta_detalle: puntosVioletaDetalle,
