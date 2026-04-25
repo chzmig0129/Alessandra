@@ -96,7 +96,14 @@ export const mundialPartidosBuscar = createTool({
         "Estado del partido: 'programado' | 'en_vivo' | 'finalizado' | 'suspendido'",
       ),
     proximos: z
-      .boolean()
+      .preprocess((val) => {
+        if (typeof val === "string") {
+          const v = val.trim().toLowerCase();
+          if (v === "true") return true;
+          if (v === "false") return false;
+        }
+        return val;
+      }, z.boolean())
       .optional()
       .describe("Si true, solo partidos desde ahora en adelante."),
     order_by: z
@@ -165,7 +172,7 @@ export const mundialPartidosBuscar = createTool({
     fase?: string;
     grupo?: string;
     estado?: string;
-    proximos?: boolean;
+    proximos?: unknown;
     order_by?: "asc" | "desc";
     limit?: number;
   }) => {
@@ -177,7 +184,7 @@ export const mundialPartidosBuscar = createTool({
       fase,
       grupo,
       estado,
-      proximos,
+      proximos: proximos as boolean | undefined,
       order_by,
       limit,
     });
@@ -197,7 +204,7 @@ export const mundialPartidosBuscar = createTool({
         fase,
         grupo,
         estado,
-        proximos,
+        proximos: proximos as boolean | undefined,
         order_by,
         limit,
       });
