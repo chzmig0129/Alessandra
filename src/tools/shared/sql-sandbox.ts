@@ -248,7 +248,8 @@ export const consulta_analitica_sql = createTool({
         async (tx: { unsafe: SqlTag }) => {
           await tx.unsafe`SET LOCAL statement_timeout = '3s'`;
           await tx.unsafe`SET LOCAL transaction_read_only = on`;
-          return tx.unsafe`${normalisedSql}` as Promise<
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          return (tx as any).unsafe(normalisedSql) as Promise<
             Record<string, unknown>[]
           >;
         }
@@ -277,8 +278,9 @@ export const consulta_analitica_sql = createTool({
       };
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
+      console.error('[sql-sandbox] execute failed:', errorMsg);
       await logAttempt({
-        razon,
+        razon: `${razon} | ERROR: ${errorMsg.slice(0, 200)}`,
         sql_generated: normalisedSql,
         resolution: "sql_fail",
       });
