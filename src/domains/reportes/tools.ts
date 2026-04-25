@@ -141,12 +141,14 @@ export const reporteIniciar = createTool({
         "Frase corta del intent del usuario. Ej: \"reportar bache\", \"hay fuga de agua\", \"se cayó un árbol\".",
       ),
     lat: z
+      .coerce
       .number()
       .optional()
       .describe(
         "OPCIONAL. Si el [CONTEXT] del system prompt incluye lat, pásalo aquí — pre-llena el slot ubicacion automáticamente.",
       ),
     lng: z
+      .coerce
       .number()
       .optional()
       .describe(
