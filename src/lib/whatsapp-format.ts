@@ -38,9 +38,11 @@ export function mdToWhatsApp(text: string): string {
 
   // ── 3. [text](url) → text (url)
   //
-  // Non-greedy match inside brackets and parens. Handles nested parens in
-  // URLs poorly (rare in LLM output) but is sufficient for standard links.
-  out = out.replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1 ($2)");
+  // When the link text equals the URL (LLM autolink habit, e.g.
+  // `[https://...](https://...)`), emit the URL once instead of duplicating it.
+  out = out.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, text: string, url: string) =>
+    text.trim() === url.trim() ? url : `${text} (${url})`,
+  );
 
   // ── 4. Horizontal rules on their own line → blank line
   //
