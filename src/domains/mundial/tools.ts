@@ -687,16 +687,25 @@ export const mundialComoLlegar = createTool({
       return { ok: false as const, error: "coordenadas inválidas" };
     }
 
+    // v_mundial_sedes aliases latitud→lat, longitud→lng. v_mundial_fan_fest may keep originals.
+    // Read both forms to be resilient to view-shape drift.
+    const pickCoord = (row: Record<string, unknown>, primary: string, alt: string): number | null => {
+      const v = row[primary] ?? row[alt];
+      return typeof v === "number" ? v : null;
+    };
+
     if (tipo === "sede") {
       const { data, error } = await fetchSedeById(destino_id);
       if (error) return { ok: false as const, error };
       if (!data) return { ok: false as const, error: "destino no encontrado" };
-      if (data.latitud === null || data.longitud === null) {
+      const dLat = pickCoord(data as unknown as Record<string, unknown>, "lat", "latitud");
+      const dLng = pickCoord(data as unknown as Record<string, unknown>, "lng", "longitud");
+      if (dLat === null || dLng === null) {
         return { ok: false as const, error: "destino sin coordenadas registradas" };
       }
 
       const origin = { lat, lng };
-      const destination = { lat: data.latitud, lng: data.longitud };
+      const destination = { lat: dLat, lng: dLng };
       const distance_km = Math.round(haversineKm(origin, destination) * 10) / 10;
       const maps_url = googleMapsDirectionsUrl(origin, destination);
 
@@ -705,8 +714,8 @@ export const mundialComoLlegar = createTool({
         destino: {
           nombre: data.nombre,
           direccion: data.direccion,
-          lat: data.latitud,
-          lng: data.longitud,
+          lat: dLat,
+          lng: dLng,
           ciudad: data.ciudad,
         },
         distance_km,
@@ -716,12 +725,14 @@ export const mundialComoLlegar = createTool({
       const { data, error } = await fetchFanFestById(destino_id);
       if (error) return { ok: false as const, error };
       if (!data) return { ok: false as const, error: "destino no encontrado" };
-      if (data.latitud === null || data.longitud === null) {
+      const dLat = pickCoord(data as unknown as Record<string, unknown>, "lat", "latitud");
+      const dLng = pickCoord(data as unknown as Record<string, unknown>, "lng", "longitud");
+      if (dLat === null || dLng === null) {
         return { ok: false as const, error: "destino sin coordenadas registradas" };
       }
 
       const origin = { lat, lng };
-      const destination = { lat: data.latitud, lng: data.longitud };
+      const destination = { lat: dLat, lng: dLng };
       const distance_km = Math.round(haversineKm(origin, destination) * 10) / 10;
       const maps_url = googleMapsDirectionsUrl(origin, destination);
 
@@ -730,8 +741,8 @@ export const mundialComoLlegar = createTool({
         destino: {
           nombre: data.nombre,
           direccion: data.ubicacion,
-          lat: data.latitud,
-          lng: data.longitud,
+          lat: dLat,
+          lng: dLng,
           ciudad: data.ciudad,
         },
         distance_km,
