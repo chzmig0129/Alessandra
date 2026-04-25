@@ -44,9 +44,10 @@ const EmergencyContactSchema = z.object({
 export const reporteIniciar = createTool({
   id: "reporte_iniciar",
   description:
-    "Inicia un nuevo flujo de reporte ciudadano. " +
-    "Llama esta herramienta al inicio de cada reporte, antes de pedir datos al usuario. " +
-    "Devuelve el prompt inicial para guiar al usuario.",
+    "Inicia el flujo de un nuevo reporte ciudadano. " +
+    "INVOCA esta tool en cuanto el usuario exprese intención de reportar " +
+    "(\"quiero reportar\", \"hay un bache\", \"reportar fuga\", \"se cayó un árbol\", etc.) " +
+    "— NO pidas datos adicionales antes; la tool inicia el flujo y luego pides los slots con reporte_slot_llenar.",
   inputSchema: z.object({
     conversation_id: z
       .string()
@@ -56,8 +57,9 @@ export const reporteIniciar = createTool({
       .string()
       .optional()
       .describe(
-        "Sugerencia de categoría ya detectada del mensaje inicial (ej: 'bache'). " +
-        "Opcional — si no se tiene, omitir.",
+        "Sugerencia de categoría ya detectada del mensaje inicial. " +
+        "Ejemplos de strings válidos: 'bache', 'fuga de agua', 'alumbrado', 'árbol caído'. " +
+        "Opcional — si no se detectó aún, omitir.",
       ),
   }),
   outputSchema: z.discriminatedUnion("ok", [
@@ -105,26 +107,30 @@ export const reporteSlotLlenar = createTool({
   id: "reporte_slot_llenar",
   description:
     "Registra el valor de un slot del reporte activo y avanza el estado si corresponde. " +
-    "Úsala cada vez que el usuario provee un dato del reporte (categoría, descripción, ubicación, foto, confirmación, etc.).",
+    "Úsala cada vez que el usuario provee un dato del reporte (categoría, descripción, ubicación, foto, confirmación, etc.). " +
+    "Ejemplo de secuencia: slot='categoria' valor='baches' → slot='tipo' valor='bache en calzada' → slot='descripcion' valor='Bache de ~1m en Av. Insurgentes'.",
   inputSchema: z.object({
     conversation_id: z
       .string()
       .min(1)
-      .describe("ID de la conversación activa."),
+      .describe("ID de la conversación activa. Ejemplo: 'conv_abc123'."),
     slot: z
       .string()
       .min(1)
       .describe(
-        "Clave del slot a llenar, ej: 'categoria', 'tipo', 'descripcion', 'ubicacion', 'fotos', 'confirmado'.",
+        "Clave del slot a llenar. Valores posibles: 'categoria' (ej: 'baches'), " +
+        "'tipo' (ej: 'bache en calzada'), 'descripcion' (ej: 'Bache grande en Av. Reforma'), " +
+        "'ubicacion' (JSON con lat/lng o direccion_libre), 'fotos' (JSON array de URLs o '\"sin_foto\"'), " +
+        "'confirmado' ('true' o 'false').",
       ),
     valor: z
       .string()
       .describe(
         "Valor del slot como string. Para slots estructurados, pasa JSON.stringify del valor: " +
         "ubicacion → '{\"lat\":19.43,\"lng\":-99.13}' o '{\"direccion_libre\":\"Av X 100\",\"colonia\":\"Centro\"}'. " +
-        "fotos → '[\"url1\",\"url2\"]' o '\"sin_foto\"'. " +
+        "fotos → '[\"https://img.ejemplo.com/foto.jpg\"]' o '\"sin_foto\"'. " +
         "confirmado → 'true' o 'false'. " +
-        "Otros (categoria, tipo, descripcion) → el string directo.",
+        "Otros (categoria, tipo, descripcion) → el string directo, ej: 'fuga de agua'.",
       ),
   }),
   outputSchema: z.discriminatedUnion("ok", [
@@ -232,12 +238,16 @@ export const reporteAnalizarImagen = createTool({
   description:
     "Analiza una imagen usando visión por computadora y devuelve una descripción y categoría sugerida. " +
     "NO muta el flujo — solo propone. El orquestador decide si usar los resultados. " +
-    "Úsala cuando el usuario adjunta una foto para ayudar a identificar la categoría del problema.",
+    "Úsala cuando el usuario adjunta una foto para ayudar a identificar la categoría del problema. " +
+    "Ejemplo: el usuario envía foto de un bache → devuelve description='Bache profundo en calzada' y suggested_category='baches'.",
   inputSchema: z.object({
     image_url: z
       .string()
       .url()
-      .describe("URL pública de la imagen a analizar."),
+      .describe(
+        "URL pública de la imagen a analizar. " +
+        "Ejemplo: 'https://storage.ejemplo.com/uploads/bache_av_reforma.jpg'.",
+      ),
   }),
   outputSchema: z.discriminatedUnion("ok", [
     z.object({
@@ -276,16 +286,20 @@ export const reporteConfirmarYCrear = createTool({
   description:
     "Crea el reporte ciudadano en base de datos luego de la confirmación del usuario. " +
     "Requiere que el flujo esté en estado CONFIRMACION y que el slot 'confirmado' sea true. " +
-    "Devuelve el folio asignado y, si el problema es urgente, incluye contactos de emergencia.",
+    "Devuelve el folio asignado (ej: CUH-20260424-007) y, si el problema es urgente, incluye contactos de emergencia. " +
+    "Solo invoca esta tool DESPUÉS de que el usuario haya dicho explícitamente que sí confirma.",
   inputSchema: z.object({
     conversation_id: z
       .string()
       .min(1)
-      .describe("ID de la conversación activa."),
+      .describe("ID de la conversación activa. Ejemplo: 'conv_abc123'."),
     user_id: z
       .string()
       .min(1)
-      .describe("ID del usuario en la tabla public.users."),
+      .describe(
+        "ID del usuario en la tabla public.users. " +
+        "Ejemplo: 'usr_789xyz'. Requerido para asignar el reporte al usuario correcto.",
+      ),
   }),
   outputSchema: z.discriminatedUnion("ok", [
     z.object({
@@ -422,12 +436,16 @@ export const reporteCancelar = createTool({
   id: "reporte_cancelar",
   description:
     "Cancela el flujo de reporte activo y libera el estado de la conversación. " +
-    "Úsala cuando el usuario decide no continuar con el reporte.",
+    "Úsala cuando el usuario decide no continuar con el reporte. " +
+    "Ejemplo: el usuario dice 'olvídalo', 'cancela', 'ya no quiero reportar'.",
   inputSchema: z.object({
     conversation_id: z
       .string()
       .min(1)
-      .describe("ID de la conversación activa."),
+      .describe(
+        "ID de la conversación activa cuyo flujo se cancelará. " +
+        "Ejemplo: 'conv_abc123'.",
+      ),
   }),
   outputSchema: z.discriminatedUnion("ok", [
     z.object({ ok: z.literal(true) }),
@@ -477,22 +495,26 @@ const LeadSchema = z.object({
 export const reporteConsultar = createTool({
   id: "reporte_consultar",
   description:
-    "Consulta un reporte ciudadano por folio y verifica que pertenece al usuario solicitante. " +
+    "Consulta un reporte por folio o, si folio es omitido, el más reciente del usuario. " +
+    "Si no se encuentra, responde literalmente \"No encontré ese reporte\" — NO sugieras canales externos. " +
     "Accede directamente a la tabla 'leads' para mostrar la descripción completa al usuario reportante. " +
     "Requiere user_id para privacidad — no devuelve reportes de otros usuarios.",
   inputSchema: z.object({
     conversation_id: z
       .string()
       .min(1)
-      .describe("ID de la conversación activa (para contexto)."),
+      .describe("ID de la conversación activa (para contexto). Ejemplo: 'conv_abc123'."),
     user_id: z
       .string()
       .min(1)
-      .describe("ID del usuario que consulta."),
+      .describe("ID del usuario que consulta. Ejemplo: 'usr_789xyz'."),
     folio: z
       .string()
       .optional()
-      .describe("Folio del reporte (ej: CUH-20260101-001). Opcional si se omite se busca el más reciente del usuario."),
+      .describe(
+        "Folio del reporte a consultar. Ejemplo: 'CUH-20260101-001'. " +
+        "Opcional — si se omite, se devuelve el reporte más reciente del usuario.",
+      ),
   }),
   outputSchema: z.discriminatedUnion("ok", [
     z.object({ ok: z.literal(true), lead: LeadSchema }),
@@ -521,7 +543,8 @@ export const reporteConsultar = createTool({
     if (!data) {
       return {
         ok: false as const,
-        error: "not found or unauthorized",
+        error:
+          "REPORTE_NO_ENCONTRADO — responde literalmente: No encontré ese reporte a tu nombre. ¿Quieres revisar la lista de tus reportes recientes?",
       };
     }
 
@@ -545,24 +568,30 @@ export const reporteListarMios = createTool({
   id: "reporte_listar_mios",
   description:
     "Lista los reportes más recientes del usuario autenticado. " +
-    "Úsala cuando el usuario pregunta '¿qué reportes tengo?', 'mis reportes', '¿en qué estado van mis reportes?', etc.",
+    "Úsala cuando el usuario pregunta '¿qué reportes tengo?', 'mis reportes', '¿en qué estado van mis reportes?', etc. " +
+    "SI la lista viene vacía (data:[]), responde literalmente \"No encontré reportes registrados a tu nombre. ¿Quieres abrir uno nuevo?\" " +
+    "— NO inventes ni sugieras LOCATEL u otros recursos externos.",
   inputSchema: z.object({
     user_id: z
       .string()
       .min(1)
-      .describe("ID del usuario que consulta."),
+      .describe("ID del usuario que consulta. Ejemplo: 'usr_789xyz'."),
     limit: z
       .number()
       .int()
       .min(1)
       .max(50)
       .optional()
-      .describe("Número máximo de reportes a devolver (default 10, máx 50)."),
+      .describe(
+        "Número máximo de reportes a devolver. Default 10, máximo 50. " +
+        "Ejemplo: 5 para mostrar solo los últimos 5 reportes.",
+      ),
   }),
   outputSchema: z.discriminatedUnion("ok", [
     z.object({
       ok: z.literal(true),
       data: z.array(LeadSchema),
+      note: z.string().optional(),
     }),
     z.object({ ok: z.literal(false), error: z.string() }),
   ]),
@@ -590,6 +619,14 @@ export const reporteListarMios = createTool({
         return parsed.success ? parsed.data : null;
       })
       .filter((lead): lead is z.infer<typeof LeadSchema> => lead !== null);
+
+    if (leads.length === 0) {
+      return {
+        ok: true as const,
+        data: [],
+        note: "EMPTY_LIST_USER_HAS_NO_REPORTS — responde literalmente: No encontré reportes registrados a tu nombre. NO menciones LOCATEL, 911, ni otros recursos.",
+      };
+    }
 
     return { ok: true as const, data: leads };
   },

@@ -42,24 +42,32 @@ import {
 export const mundialPartidosBuscar = createTool({
   id: "mundial_partidos_buscar",
   description:
-    "Busca partidos del Mundial FIFA 2026 filtrando por fecha, equipo, ciudad sede, fase, grupo o estado. " +
-    "Devuelve lista de partidos con marcadores, equipos, sede y fase. " +
-    "Úsala para responder: ¿cuándo juega X?, partidos de hoy, partidos en grupo A, semifinales, etc.",
+    "Búsqueda flexible de partidos. Si el usuario pregunta cuándo juega un equipo SIN mencionar día específico, usa solo el filtro equipo (NO añadas fecha). " +
+    "Si pregunta por una ciudad, usa solo ciudad. Si pregunta por una fase/grupo, usa solo eso. " +
+    "SOLO combina filtros si el usuario los pide explícitamente.",
   inputSchema: z.object({
     fecha: z
       .string()
       .optional()
-      .describe("Fecha en formato YYYY-MM-DD (hora Mexico). Ej: '2026-06-11'"),
+      .describe(
+        "Fecha en formato YYYY-MM-DD (hora Mexico). Ej: '2026-06-11'. " +
+        "IMPORTANTE: NO combines fecha con equipo a menos que el usuario haya pedido un día específico " +
+        "(ej: \"qué juega México el 15 de junio\"). Si el usuario solo dice \"cuándo juega México\", usa solo equipo:\"MEX\" sin fecha.",
+      ),
     equipo: z
       .string()
       .optional()
       .describe(
-        "Código FIFA de 3 letras en MAYÚSCULAS. Ej: MEX, ARG, BRA, USA, CAN. NO uses nombres como Mexico/México.",
+        "Código FIFA de 3 letras en MAYÚSCULAS. Ej: MEX, USA, CAN, ARG, BRA, GER, ESP, FRA, GBR, ITA, NED, POR, BEL, URU, COL. " +
+        "NO uses nombres como Mexico/México — solo códigos de 3 letras.",
       ),
     ciudad: z
       .string()
       .optional()
-      .describe("Ciudad donde se juega. Ej: 'Ciudad de México', 'Toronto'."),
+      .describe(
+        "Ciudad donde se juega, exactamente como aparece en la BD. " +
+        "Ej: 'Ciudad de México', 'Guadalajara', 'Monterrey', 'Toronto', 'Vancouver', 'Kansas City', 'Los Angeles'.",
+      ),
     fase: z
       .string()
       .optional()
@@ -120,6 +128,7 @@ export const mundialPartidosBuscar = createTool({
         }),
       ),
       total: z.number(),
+      note: z.string().optional().describe("Nota informativa cuando se removió un filtro automáticamente para ampliar resultados."),
     }),
     z.object({
       ok: z.literal(false),
@@ -163,7 +172,28 @@ export const mundialPartidosBuscar = createTool({
       return { ok: false as const, error };
     }
 
-    const rows = data.map((row) => ({
+    // GUARD RULE: if equipo+fecha combo returned no results, retry without fecha
+    let guardNote: string | undefined;
+    let finalData = data;
+    if (equipo && fecha && data.length === 0) {
+      const { data: retryData, error: retryError } = await fetchPartidos({
+        equipo,
+        ciudad,
+        fase,
+        grupo,
+        estado,
+        proximos,
+        order_by,
+        limit,
+      });
+      if (!retryError && retryData.length > 0) {
+        finalData = retryData;
+        guardNote =
+          "Removí el filtro de fecha porque la combinación equipo+fecha no devolvió partidos. Estos son todos los partidos del equipo.";
+      }
+    }
+
+    const rows = finalData.map((row) => ({
       id: row.id,
       fecha_iso_utc: row.fecha_hora_cdmx,
       fase: row.fase,
@@ -191,7 +221,12 @@ export const mundialPartidosBuscar = createTool({
       display: partidoToDisplay(row),
     }));
 
-    return { ok: true as const, data: rows, total: rows.length };
+    return {
+      ok: true as const,
+      data: rows,
+      total: rows.length,
+      ...(guardNote !== undefined ? { note: guardNote } : {}),
+    };
   },
 });
 
@@ -209,8 +244,11 @@ export const mundialSedeInfo = createTool({
     id_or_city: z
       .string()
       .describe(
-        "ID numérico de la sede, nombre del estadio o nombre de ciudad. " +
-          "Ej: '1', 'Azteca', 'Toronto', 'Ciudad de México'.",
+        "Acepta CUALQUIERA de los tres formatos en UNA SOLA llamada: ID numérico, nombre del estadio o nombre de ciudad. " +
+          "El LLM no debe iterar formatos — cualquiera de los tres devuelve el mismo registro. " +
+          "Ej: '8', 'Estadio Azteca' y 'Ciudad de México' devuelven el mismo estadio. " +
+          "Otros ejemplos: '1', 'SoFi Stadium', 'Los Angeles'. " +
+          "Usa el valor que el usuario mencionó directamente.",
       ),
   }),
   outputSchema: z.discriminatedUnion("ok", [
@@ -363,7 +401,15 @@ export const mundialPartidoDetalle = createTool({
     "equipos, marcador, sede, eventos (goles, tarjetas, cambios) y alineaciones. " +
     "Úsala cuando el usuario pregunta por los detalles de un partido concreto por ID.",
   inputSchema: z.object({
-    partido_id: z.number().int().positive().describe("ID numérico del partido."),
+    partido_id: z
+      .number()
+      .int()
+      .positive()
+      .describe(
+        "ID numérico devuelto por mundial_partidos_buscar. " +
+          "Solo usa esta tool si el usuario pidió detalles de UN partido específico " +
+          "(alineaciones, eventos, goles).",
+      ),
   }),
   outputSchema: z.discriminatedUnion("ok", [
     z.object({
@@ -489,7 +535,10 @@ export const mundialEquipoInfo = createTool({
       .string()
       .describe(
         "Código FIFA de 3 letras (MEX, USA, ARG…) o nombre del equipo en español o inglés. " +
-          "Ej: 'MEX', 'México', 'Argentina', 'USA'.",
+          "Acepta tanto código como nombre: 'MEX' o 'México' o 'Mexico', 'ARG' o 'Argentina', " +
+          "'BRA' o 'Brasil' o 'Brazil', 'USA' o 'Estados Unidos', 'ESP' o 'España', " +
+          "'FRA' o 'Francia', 'GER' o 'Alemania', 'POR' o 'Portugal'. " +
+          "Códigos canónicos: MEX, USA, CAN, ARG, BRA, GER, ESP, FRA, GBR, ITA, NED, POR, BEL, URU, COL.",
       ),
   }),
   outputSchema: z.discriminatedUnion("ok", [

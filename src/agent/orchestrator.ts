@@ -20,7 +20,7 @@ import { Agent } from "@mastra/core/agent";
 
 import { classifyDomain } from "./router";
 import { SYSTEM_PROMPT_BASE } from "./prompts/system";
-import { promptForDomain } from "./prompts/domain-specific";
+import { domainHint } from "./prompts/domain-specific";
 import {
   genderEmergencyResponse,
   type Canalizacion,
@@ -260,7 +260,7 @@ export async function processTurn(
 
   // ---- 5. System prompt ----------------------------------------------------
 
-  const systemPrompt = SYSTEM_PROMPT_BASE + "\n\n" + promptForDomain(cls.domain);
+  const systemPrompt = SYSTEM_PROMPT_BASE + domainHint(cls.domain, cls.confidence);
 
   // Inject conversation/user context so tools that need them can receive the
   // values via the LLM-provided arguments.

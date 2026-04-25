@@ -35,16 +35,16 @@ import type { Domain } from "@/types";
  * Minimum score required for a domain to be asserted by the router.
  * Scores below this value are treated as inconclusive.
  */
-export const DOMAIN_THRESHOLD = 0.4;
+export const DOMAIN_THRESHOLD = 0.3;
 
 // ---------------------------------------------------------------------------
 // Per-domain heuristic patterns
 // ---------------------------------------------------------------------------
 
 const DOMAIN_PATTERNS: Record<NonNullable<Exclude<Domain, null>>, RegExp> = {
-  mundial: /partido|mundial|fifa|estadio|fan fest|copa/i,
-  puntos_violeta: /violeta|mujer|emergencia|seguridad|protección|acoso/i,
-  reportes: /bache|alumbrado|basura|fuga|árbol|cable|reportar|denunciar|folio/i,
+  mundial: /(\bmundial\b|\bfifa\b|world cup|copa do mundo|partido|match|jogo|joga|jogue|play|plays|juega|jugar|estadio|estádio|stadium|fan fest|sede|venue|grupo|group|fase|inauguraci[oó]n|opening|final|semifinal|cuartos|octavos|quarterfinal|round of)|\b(m[eé]xico|mexico|argentina|brasil|brazil|alemania|germany|espa[ñn]a|spain|francia|france|inglaterra|england|holanda|netherlands|portugal|italia|italy|uruguay|colombia|chile|estados unidos|usa|canad[aá]|canada|jap[oó]n|japan|corea|korea|marruecos|morocco)\b|\b(azteca|akron|bbva|sofi|metlife|arrowhead|gillette|toronto|vancouver|los angeles|dallas|atlanta|miami|seattle|houston|new york)\b/i,
+  puntos_violeta: /violeta|violet point|ponto violeta|mujer|women|mulher|emergencia|emergency|emergência|seguridad|safety|seguran[çc]a|protecci[oó]n|protection|prote[çc][aã]o|acoso|harassment|ass[eé]dio|p[aá]nico|panic|p[aâ]nico|agresi[oó]n|aggression|agress[aã]o/i,
+  reportes: /bache|pothole|buraco|alumbrado|streetlight|ilumina[çc][aã]o|basura|trash|garbage|lixo|fuga|leak|vazamento|[aá]rbol|tree|[aá]rvore|cable|reportar|report|denunciar|denounce|folio|ticket|protocolo|queja|complaint|reclama[çc][aã]o/i,
   fuera_alcance: /(?:)/,  // never matches — kept for structural completeness
 };
 

@@ -7,10 +7,10 @@
  *   1. Flow stickiness  — if an active (non-expired) flow exists, keep its
  *                         domain with high confidence (0.95).
  *   2. Heuristic        — regex-based scoring via scoreDomain().  If the
- *                         top score is >= DOMAIN_THRESHOLD (0.4), return it.
- *   3. Off-topic gate   — if the top score is < 0.15, declare fuera_alcance
+ *                         top score is >= DOMAIN_THRESHOLD (0.3), return it.
+ *   3. Off-topic gate   — if the top score is < 0.05, declare fuera_alcance
  *                         without an LLM call.
- *   4. LLM fallback     — scores in [0.15, 0.4) are inconclusive; ask the
+ *   4. LLM fallback     — scores in [0.05, 0.3) are inconclusive; ask the
  *                         LLM (MODEL_ROUTER) to classify, capped at 1 call
  *                         per invocation, no retries.
  *
@@ -39,7 +39,7 @@ export interface ClassifyResult {
 // ---------------------------------------------------------------------------
 
 /** Score below which a message is considered clearly off-topic. */
-const OFF_TOPIC_THRESHOLD = 0.15;
+const OFF_TOPIC_THRESHOLD = 0.05;
 
 /** Confidence assigned when LLM is used for the final classification. */
 const LLM_CONFIDENCE = 0.6;
@@ -143,6 +143,8 @@ export async function classifyDomain(
       `User message: "${text}"`,
       "",
       "Respond with the domain key and a one-sentence reason in the same language as the message.",
+      "",
+      "IMPORTANT: If the message mentions a country name, a city that hosts the World Cup, or any team competing in 2026 — classify as mundial. If it asks about safety/help for women, classify as puntos_violeta. If it mentions any urban issue (pothole, lighting, trash, leak), classify as reportes. When in doubt between mundial and fuera_alcance, prefer mundial.",
     ].join("\n"),
   });
 

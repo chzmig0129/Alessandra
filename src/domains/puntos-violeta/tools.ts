@@ -19,24 +19,22 @@ import { fetchPuntosVioleta, fetchPuntoDetalle } from "./queries";
 export const puntosVioletaBuscar = createTool({
   id: "puntos_violeta_buscar",
   description:
-    "Busca Puntos Violeta (espacios seguros para mujeres) en la Ciudad de México. " +
-    "Filtra por ubicación (lat/lng + radio), colonia, tipo de atención, o si está abierto ahora. " +
-    "Si se proporcionan coordenadas, los resultados se ordenan por distancia. " +
-    "Úsala para: ¿dónde hay un punto violeta cerca de mí?, puntos violeta en Cuauhtémoc, " +
-    "centros de atención a víctimas abiertos ahora, etc.",
+    "Busca Puntos Violeta de la Alcaldía Cuauhtémoc. SIEMPRE invoca esta tool cuando el usuario mencione " +
+    '"punto violeta", "ayuda mujer", "emergencia género" o equivalente — NO pidas información adicional antes de invocar. ' +
+    "La tool acepta búsqueda sin filtros (devuelve los más relevantes) o con filtros opcionales (lat/lng, colonia, abierto_ahora).",
   inputSchema: z.object({
     lat: z
       .number()
       .min(-90)
       .max(90)
       .optional()
-      .describe("Latitud del usuario para ordenar por distancia. Ej: 19.4326."),
+      .describe("Opcional. Latitud decimal del usuario para ordenar por distancia. Si no la tienes, omítela — la tool igual devuelve resultados. Ej: 19.4326."),
     lng: z
       .number()
       .min(-180)
       .max(180)
       .optional()
-      .describe("Longitud del usuario para ordenar por distancia. Ej: -99.1332."),
+      .describe("Opcional. Longitud decimal del usuario para ordenar por distancia. Si no la tienes, omítela — la tool igual devuelve resultados. Ej: -99.1332."),
     radio_km: z
       .number()
       .positive()
@@ -47,7 +45,7 @@ export const puntosVioletaBuscar = createTool({
     colonia: z
       .string()
       .optional()
-      .describe("Colonia donde buscar. Ej: 'Doctores', 'Centro'."),
+      .describe("Opcional. Si el usuario menciona una colonia explícita (Roma Norte, Doctores, Centro, Juárez, Condesa) pásala. Si no, omítela."),
     tipo_atencion: z
       .string()
       .optional()
@@ -58,8 +56,7 @@ export const puntosVioletaBuscar = createTool({
       .boolean()
       .optional()
       .describe(
-        "Si true, filtra solo puntos con horario que incluya el momento actual. " +
-          "Puntos con horario desconocido se incluyen marcados como _horario_unknown.",
+        'Opcional. Pásalo true cuando el usuario pida atención "24 horas", "ahorita", "de noche", "now", o equivalente.',
       ),
     limit: z
       .number()
@@ -156,7 +153,7 @@ export const puntosVioletaDetalle = createTool({
     "nombre, dirección completa, colonia, coordenadas, teléfono, horario, tipo de atención. " +
     "Úsala después de puntos_violeta_buscar para obtener el detalle completo de un resultado.",
   inputSchema: z.object({
-    id: z.number().int().positive().describe("ID numérico del Punto Violeta."),
+    id: z.number().int().positive().describe("ID numérico devuelto por puntos_violeta_buscar. Solo usa esta tool si el usuario pide más detalles de un punto específico ya mostrado."),
   }),
   outputSchema: z.discriminatedUnion("ok", [
     z.object({
