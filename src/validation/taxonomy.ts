@@ -150,6 +150,46 @@ export async function getTiposForCategoria(categoria: string): Promise<string[]>
   return map ? Array.from(map.keys()) : [];
 }
 
+/**
+ * Given a category slug and a free-text hint (e.g., the user description + the
+ * hallucinated tipo slug), returns the first tipo slug whose attributes.keywords[]
+ * contains a token found in the hint string.
+ *
+ * Matching is accent-insensitive (NFD diacritic stripping) so that
+ * "árbol caído" matches the keyword "arbol caido".
+ *
+ * Returns null if no match is found or the category does not exist.
+ */
+export async function suggestTipoFromKeyword(
+  categoria: string,
+  hint: string,
+): Promise<string | null> {
+  const { tipos } = await loadReportTaxonomy();
+  const map = tipos.get(categoria);
+  if (!map) return null;
+  // Normalize hint: lowercase + remove diacritics so "árbol caído" → "arbol caido".
+  const normalized = hint
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .trim();
+  if (!normalized) return null;
+  for (const [tipoSlug, tipoInfo] of map.entries()) {
+    const keywords = (tipoInfo.attributes?.["keywords"] as string[]) ?? [];
+    for (const kw of keywords) {
+      const kwNorm = kw
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/\p{Diacritic}/gu, "")
+        .trim();
+      if (kwNorm.length > 0 && normalized.includes(kwNorm)) {
+        return tipoSlug;
+      }
+    }
+  }
+  return null;
+}
+
 export async function getRoutingArea(
   categoria: string,
   tipo: string,

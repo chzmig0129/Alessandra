@@ -22,7 +22,7 @@ import { SLOT_CONFIG } from "./slots";
 import { callCrearLead } from "./folio";
 import { analyzeImage } from "@/tools/shared/vision";
 import { lookupEmergencyContacts } from "@/tools/shared/emergency-contacts";
-import { isUrgentCategory, isValidTipo, getTiposForCategoria } from "@/validation/taxonomy";
+import { isUrgentCategory, isValidTipo, getTiposForCategoria, suggestTipoFromKeyword } from "@/validation/taxonomy";
 import { getTurnContext } from "@/lib/turn-context";
 
 // ---------------------------------------------------------------------------
@@ -625,16 +625,29 @@ export const reporteConfirmarYCrear = createTool({
           // (Re-assign via mutable local — we'll reference correctedTipo below.)
           slots["tipo"] = correctedTipo;
         } else {
-          // 0 or 2+ valid tipos — let the LLM correct with explicit instruction.
-          const lista = validos.length > 0 ? validos.join(", ") : "(ninguno registrado)";
-          return {
-            ok: false as const,
-            error:
-              `INSTRUCCIÓN_PARA_AGENTE: El tipo "${tipo}" no es válido para la categoría "${categoria}". ` +
-              `Tipos válidos: ${lista}. INVOCA reporte_slot_llenar(slot:"tipo", valor:"<slug-correcto>") y ` +
-              `INMEDIATAMENTE en este MISMO turn DEBES invocar reporte_confirmar_y_crear DESPUÉS de corregir el slot. ` +
-              `NO muestres un nuevo resumen al usuario. NO pidas confirmación otra vez. El usuario YA confirmó.`,
-          };
+          // Caso 2 (keyword-match): 0 or 2+ valid tipos — try keyword match
+          // in taxonomy using description + hallucinated tipo as hint.
+          const keywordHint = `${descripcion ?? ""} ${tipo ?? ""}`.trim();
+          const suggested = await suggestTipoFromKeyword(categoria, keywordHint);
+          if (suggested) {
+            await setFlowSlot(resolvedConvId, "tipo", suggested);
+            console.info(
+              `[reportes] auto-corrected tipo from "${tipo}" to "${suggested}" via keyword match (categoria=${categoria})`,
+            );
+            // Persist corrected tipo so efectiveTipo reads the corrected value below.
+            slots["tipo"] = suggested;
+          } else {
+            // No keyword match — let the LLM correct with explicit instruction.
+            const lista = validos.length > 0 ? validos.join(", ") : "(ninguno registrado)";
+            return {
+              ok: false as const,
+              error:
+                `INSTRUCCIÓN_PARA_AGENTE: El tipo "${tipo}" no es válido para la categoría "${categoria}". ` +
+                `Tipos válidos: ${lista}. INVOCA reporte_slot_llenar(slot:"tipo", valor:"<slug-correcto>") y ` +
+                `INMEDIATAMENTE en este MISMO turn DEBES invocar reporte_confirmar_y_crear DESPUÉS de corregir el slot. ` +
+                `NO muestres un nuevo resumen al usuario. NO pidas confirmación otra vez. El usuario YA confirmó.`,
+            };
+          }
         }
       }
     }
