@@ -46,27 +46,8 @@ import {
 } from "@/guardrails/pre-llm";
 import { citationCheck } from "@/guardrails/post-llm";
 
-import { emergencia_mujer_canalizar, emergencia_mujer_tool } from "@/domains/puntos-violeta/emergency";
-import { puntosVioletaBuscar, puntosVioletaDetalle } from "@/domains/puntos-violeta/tools";
-import {
-  mundialPartidosBuscar,
-  mundialSedeInfo,
-  mundialFanFest,
-  mundialPartidoDetalle,
-  mundialEquipoInfo,
-  mundialComoLlegar,
-} from "@/domains/mundial/tools";
-import {
-  reporteIniciar,
-  reporteSlotLlenar,
-  reporteAnalizarImagen,
-  reporteConfirmarYCrear,
-  reporteCancelar,
-  reporteConsultar,
-  reporteListarMios,
-} from "@/domains/reportes/tools";
-import { consulta_analitica_sql } from "@/tools/shared/sql-sandbox";
-import { knowledgeBuscar } from "@/tools/shared/knowledge";
+import { emergencia_mujer_canalizar } from "@/domains/puntos-violeta/emergency";
+import { ALL_TOOLS } from "./tool-dispatcher";
 
 import { env } from "@/env";
 import type { AlessandraResponse } from "@/types";
@@ -134,35 +115,12 @@ const CITATION_RETRY_SUFFIX =
   "No inventes teléfonos, horarios, direcciones ni folios. Si el dato no está en los resultados, omítelo.";
 
 // ---------------------------------------------------------------------------
-// All tools record — static, shared across turns.
-// Tools that need conversation_id / user_id accept them in their input schema
-// and receive the values injected by the LLM from context.
+// All tools record — imported from tool-dispatcher so the registry is defined
+// in a single place and can be reused by HTTP voice endpoints without
+// duplicating the list here.
 // ---------------------------------------------------------------------------
 
-const ALL_TOOLS = {
-  // Mundial (6)
-  mundial_partidos_buscar: mundialPartidosBuscar,
-  mundial_sede_info: mundialSedeInfo,
-  mundial_fan_fest: mundialFanFest,
-  mundial_partido_detalle: mundialPartidoDetalle,
-  mundial_equipo_info: mundialEquipoInfo,
-  mundial_como_llegar: mundialComoLlegar,
-  // Puntos Violeta (2 + emergency)
-  puntos_violeta_buscar: puntosVioletaBuscar,
-  puntos_violeta_detalle: puntosVioletaDetalle,
-  emergencia_mujer_canalizar: emergencia_mujer_tool,
-  // Reportes (7)
-  reporte_iniciar: reporteIniciar,
-  reporte_slot_llenar: reporteSlotLlenar,
-  reporte_analizar_imagen: reporteAnalizarImagen,
-  reporte_confirmar_y_crear: reporteConfirmarYCrear,
-  reporte_cancelar: reporteCancelar,
-  reporte_consultar: reporteConsultar,
-  reporte_listar_mios: reporteListarMios,
-  // Shared analytics + knowledge base
-  consulta_analitica_sql,
-  knowledge_buscar: knowledgeBuscar,
-} as const;
+// ALL_TOOLS is imported above from "./tool-dispatcher".
 
 // ---------------------------------------------------------------------------
 // Mastra Agent singleton — model resolved at construction time.

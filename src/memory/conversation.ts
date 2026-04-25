@@ -1,4 +1,8 @@
 import { supabaseAdmin } from "@/db/supabase-server";
+import {
+  getOrCreateActiveSession,
+  type ActiveSession,
+} from "@/memory/session";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -35,6 +39,39 @@ function isMessageArray(value: unknown): value is Message[] {
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
+
+/**
+ * Get the active conversation for a user, or create a new one.
+ *
+ * @param userId  - The user's UUID.
+ * @param channel - Origin channel: 'whatsapp' | 'web' | 'voice'.
+ *                  Defaults to 'whatsapp' to preserve backward compatibility
+ *                  with the existing WhatsApp flow.
+ */
+export async function getOrCreateActive(
+  userId: string,
+  channel: "whatsapp" | "web" | "voice" = "whatsapp",
+): Promise<ActiveSession> {
+  return getOrCreateActiveSession(userId, channel);
+}
+
+/**
+ * Create a new conversation for a user on the given channel.
+ *
+ * This is a thin wrapper that always forces a new session by delegating to
+ * getOrCreateActiveSession. Useful when callers need an explicit new
+ * conversation regardless of whether an active one exists.
+ *
+ * @param userId  - The user's UUID.
+ * @param channel - Origin channel: 'whatsapp' | 'web' | 'voice'.
+ *                  Defaults to 'whatsapp'.
+ */
+export async function createConversation(
+  userId: string,
+  channel: "whatsapp" | "web" | "voice" = "whatsapp",
+): Promise<ActiveSession> {
+  return getOrCreateActiveSession(userId, channel);
+}
 
 /**
  * Load the last `limit` messages from a conversation.
