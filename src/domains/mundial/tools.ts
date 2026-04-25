@@ -644,13 +644,13 @@ export const mundialComoLlegar = createTool({
     tipo: z
       .enum(["sede", "fan_fest"])
       .describe("Tipo de destino: 'sede' para estadios, 'fan_fest' para Fan Festivals."),
-    destino_id: z
+    destino_id: z.coerce
       .number()
       .int()
       .positive()
       .describe("ID numérico del destino en v_mundial_sedes o v_mundial_fan_fest."),
-    lat: z.number().describe("Latitud del usuario (WGS84)."),
-    lng: z.number().describe("Longitud del usuario (WGS84)."),
+    lat: z.coerce.number().describe("Latitud del usuario (WGS84)."),
+    lng: z.coerce.number().describe("Longitud del usuario (WGS84)."),
   }),
   outputSchema: z.discriminatedUnion("ok", [
     z.object({

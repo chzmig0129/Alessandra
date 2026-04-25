@@ -23,19 +23,19 @@ export const puntosVioletaBuscar = createTool({
     '"punto violeta", "ayuda mujer", "emergencia género" o equivalente — NO pidas información adicional antes de invocar. ' +
     "La tool acepta búsqueda sin filtros (devuelve los más relevantes) o con filtros opcionales (lat/lng, colonia, abierto_ahora).",
   inputSchema: z.object({
-    lat: z
+    lat: z.coerce
       .number()
       .min(-90)
       .max(90)
       .optional()
       .describe("Opcional. Latitud decimal del usuario para ordenar por distancia. Si no la tienes, omítela — la tool igual devuelve resultados. Ej: 19.4326."),
-    lng: z
+    lng: z.coerce
       .number()
       .min(-180)
       .max(180)
       .optional()
       .describe("Opcional. Longitud decimal del usuario para ordenar por distancia. Si no la tienes, omítela — la tool igual devuelve resultados. Ej: -99.1332."),
-    radio_km: z
+    radio_km: z.coerce
       .number()
       .positive()
       .optional()
@@ -58,7 +58,7 @@ export const puntosVioletaBuscar = createTool({
       .describe(
         'Opcional. Pásalo true cuando el usuario pida atención "24 horas", "ahorita", "de noche", "now", o equivalente.',
       ),
-    limit: z
+    limit: z.coerce
       .number()
       .int()
       .min(1)

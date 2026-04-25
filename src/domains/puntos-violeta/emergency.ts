@@ -182,13 +182,13 @@ export const emergencia_mujer_tool = createTool({
     "los contactos de emergencia para mujeres, y los teléfonos clave (*765 LUNAS, 911, LOCATEL). " +
     "Úsala SIEMPRE que la usuaria exprese una situación de violencia, miedo o emergencia.",
   inputSchema: z.object({
-    lat: z
+    lat: z.coerce
       .number()
       .min(-90)
       .max(90)
       .optional()
       .describe("Latitud del usuario para ordenar puntos violeta por distancia."),
-    lng: z
+    lng: z.coerce
       .number()
       .min(-180)
       .max(180)
