@@ -212,8 +212,9 @@ export const reporteIniciar = createTool({
     }
 
     const prompt =
-      SLOT_CONFIG["IDENTIFICANDO_CATEGORIA"].slots[0]?.prompt ??
-      "¿Qué problema quieres reportar?";
+      "FLUJO_RECIEN_INICIADO. Los slots están VACÍOS. DEBES invocar reporte_slot_llenar UNA VEZ por cada slot en este MISMO turn EN ORDEN: " +
+      "categoria → tipo → descripcion → ubicacion → fotos. NO asumas slots de reportes anteriores en la conversación. " +
+      "NO muestres resumen al usuario sin haber llenado los 5 slots primero. Después del 5to slot, muestra el resumen y espera confirmación del usuario.";
 
     return { ok: true as const, next_prompt: prompt };
   },
@@ -557,7 +558,7 @@ export const reporteConfirmarYCrear = createTool({
     if (missingSlots.length > 0) {
       return {
         ok: false as const,
-        error: `INSTRUCCIÓN_PARA_AGENTE: Faltan slots por llenar: ${missingSlots.join(", ")}. INVOCA reporte_slot_llenar para cada uno (en ese orden) antes de reintentar reporte_confirmar_y_crear. NO le digas al usuario que hubo un error técnico — completa los slots y vuelve a intentar.`,
+        error: `CRÍTICO: En este MISMO turn, ANTES de responderle al usuario, DEBES invocar reporte_slot_llenar para CADA slot faltante (${missingSlots.join(", ")}) leyendo los valores del HISTORIAL de la conversación, y LUEGO reintentar reporte_confirmar_y_crear. NO le pidas al usuario información que YA TE DIO en mensajes anteriores. NO digas que hubo un error técnico.`,
       };
     }
 

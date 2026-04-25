@@ -319,6 +319,37 @@ export async function processTurn(
     env.MAX_CONTEXT_MESSAGES,
   );
 
+  // ---- 3b. Guard against duplicate leads ------------------------------------
+  // If flow is null (no active report) and the user sends a bare confirmation
+  // ("si", "confirmo", etc.) right after an assistant message that announced a
+  // freshly-created folio, do NOT restart the flow — acknowledge and stop.
+  if (flow == null) {
+    const isBareConfirm = /^\s*(s[íi]|confirmo|ok|sip)\.?\s*$/i.test(input.userMessage);
+    if (isBareConfirm) {
+      const lastAssistant = [...recentMessages].reverse().find((m) => m.role === "assistant");
+      const folioMatch = lastAssistant?.content.match(/CUH-\d{8}-\d{3}/);
+      if (folioMatch) {
+        const cannedText = `Tu reporte ya fue registrado (folio ${folioMatch[0]}). ¿Necesitas reportar algo más o tienes otra consulta?`;
+        await appendMessage(conversationId, {
+          role: "user",
+          content: input.userMessage,
+          created_at: new Date().toISOString(),
+        });
+        await appendMessage(conversationId, {
+          role: "assistant",
+          content: cannedText,
+          created_at: new Date().toISOString(),
+          latency_ms: Date.now() - startedAt,
+        });
+        await bumpSessionTtl(conversationId);
+        return {
+          text: cannedText,
+          debug: { short_circuit: "duplicate_confirm_blocked", folio: folioMatch[0] },
+        };
+      }
+    }
+  }
+
   // ---- 4. Domain classification --------------------------------------------
 
   const cls = await classifyDomain(input.userMessage, flow);
