@@ -38,6 +38,28 @@ function stripUrls(text: string): string {
   return text.replace(/https?:\/\/\S+/g, ' ');
 }
 
+/**
+ * Reduce a phone-like string to digits only, so "55 5658 1111", "55-5658-1111",
+ * and "5556581111" all compare equal. Caller substring-matches the normalised
+ * form against a normalised haystack.
+ */
+function digitsOnly(s: string): string {
+  return s.replace(/\D/g, "");
+}
+
+/**
+ * Canonical CDMX emergency phone numbers that are always allowed regardless of
+ * tool output. These are documented in the system prompt and the safety
+ * protocol — when the LLM cites them, it is repeating vetted authoritative
+ * data, not inventing.
+ */
+const SAFETY_PHONE_WHITELIST_DIGITS: readonly string[] = [
+  "911",          // emergency
+  "5556581111",   // LOCATEL CDMX
+  "5555335533",   // Línea Mujeres SEMUJERES CDMX
+  "8002900024",   // LUNAS nacional
+];
+
 /** Matches Alcaldía Cuauhtémoc folio identifiers. */
 const FOLIO_RE = /CUH-\d{8}-\d{3}/g;
 
@@ -109,6 +131,7 @@ export function citationCheck(
   toolOutputs: unknown[],
 ): CitationCheckResult {
   const outputsAsString = JSON.stringify(toolOutputs);
+  const outputsDigits = digitsOnly(outputsAsString);
 
   const missing: string[] = [];
   const warnings: string[] = [];
@@ -134,10 +157,31 @@ export function citationCheck(
     }
   }
 
+  /**
+   * Phone-aware variant: compare digits-only forms against tool outputs and
+   * the safety whitelist. "55 5658 1111", "55-5658-1111", and "5556581111"
+   * all reduce to the same key.
+   */
+  function checkPhones(text: string, target: string[]): void {
+    PHONE_RE.lastIndex = 0;
+    const seen = new Set<string>();
+    let match: RegExpExecArray | null;
+    while ((match = PHONE_RE.exec(text)) !== null) {
+      const value = match[0];
+      if (seen.has(value)) continue;
+      seen.add(value);
+      const digits = digitsOnly(value);
+      if (digits.length === 0) continue;
+      if (outputsDigits.includes(digits)) continue;
+      if (SAFETY_PHONE_WHITELIST_DIGITS.includes(digits)) continue;
+      target.push(value);
+    }
+  }
+
   // Hard-fail checks
   // Strip URLs before phone scan: coordinate digits inside a maps URL
   // (e.g. origin=19.432600,-99.130000) could otherwise match PHONE_RE.
-  checkMatches(PHONE_RE, stripUrls(responseText), missing);
+  checkPhones(stripUrls(responseText), missing);
   checkMatches(FOLIO_RE, responseText, missing);
   checkMatches(TIME_RE, responseText, missing);
 
