@@ -76,12 +76,6 @@ const voicePrompt = rawVoicePrompt.replace(
 // Build server tools config
 // ---------------------------------------------------------------------------
 
-interface RequestHeader {
-  type: "value";
-  name: string;
-  value: string;
-}
-
 interface RequestBodySchema {
   type: "object";
   properties: Record<string, unknown>;
@@ -91,7 +85,7 @@ interface RequestBodySchema {
 interface ApiSchema {
   url: string;
   method: "POST";
-  request_headers: RequestHeader[];
+  request_headers: Record<string, string>;
   request_body_schema: RequestBodySchema;
 }
 
@@ -109,18 +103,10 @@ const tools: ServerTool[] = VOICE_TOOL_SCHEMAS.map((t) => ({
   api_schema: {
     url: `${PUBLIC_BASE_URL}/api/agent/voice-tools/${t.name}`,
     method: "POST" as const,
-    request_headers: [
-      {
-        type: "value" as const,
-        name: "Authorization",
-        value: `Bearer ${TOOLS_BEARER}`,
-      },
-      {
-        type: "value" as const,
-        name: "Content-Type",
-        value: "application/json",
-      },
-    ],
+    request_headers: {
+      Authorization: `Bearer ${TOOLS_BEARER}`,
+      "Content-Type": "application/json",
+    },
     request_body_schema: {
       type: "object" as const,
       properties: {

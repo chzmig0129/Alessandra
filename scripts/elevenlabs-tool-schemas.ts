@@ -402,7 +402,8 @@ export const VOICE_TOOL_SCHEMAS: VoiceToolSchema[] = [
       "Busca los Fan Festivals oficiales de la FIFA 2026. Filtra por ciudad o país.",
     parameters_schema: {
       type: "object",
-      additionalProperties: true,
+      properties: {},
+      required: [],
     },
   },
 
@@ -416,7 +417,8 @@ export const VOICE_TOOL_SCHEMAS: VoiceToolSchema[] = [
       "Devuelve información completa de un partido específico por ID: equipos, marcador, eventos (goles, tarjetas) y alineaciones.",
     parameters_schema: {
       type: "object",
-      additionalProperties: true,
+      properties: {},
+      required: [],
     },
   },
 
@@ -430,7 +432,8 @@ export const VOICE_TOOL_SCHEMAS: VoiceToolSchema[] = [
       "Devuelve información de un equipo del Mundial 2026: nombre, grupo, ranking FIFA, confederación, próximos partidos.",
     parameters_schema: {
       type: "object",
-      additionalProperties: true,
+      properties: {},
+      required: [],
     },
   },
 
@@ -444,7 +447,8 @@ export const VOICE_TOOL_SCHEMAS: VoiceToolSchema[] = [
       "Devuelve la información completa de un Punto Violeta específico dado su ID numérico.",
     parameters_schema: {
       type: "object",
-      additionalProperties: true,
+      properties: {},
+      required: [],
     },
   },
 
@@ -459,7 +463,8 @@ export const VOICE_TOOL_SCHEMAS: VoiceToolSchema[] = [
       "Devuelve Puntos Violeta 24/7 más cercanos, contactos de emergencia y teléfonos clave (*765 LUNAS, 911, LOCATEL).",
     parameters_schema: {
       type: "object",
-      additionalProperties: true,
+      properties: {},
+      required: [],
     },
   },
 
@@ -474,7 +479,8 @@ export const VOICE_TOOL_SCHEMAS: VoiceToolSchema[] = [
       "Usar cuando el usuario diga 'olvídalo', 'cancela', 'ya no quiero reportar'.",
     parameters_schema: {
       type: "object",
-      additionalProperties: true,
+      properties: {},
+      required: [],
     },
   },
 
@@ -488,7 +494,8 @@ export const VOICE_TOOL_SCHEMAS: VoiceToolSchema[] = [
       "Lista los reportes más recientes del usuario. Usar cuando pregunte '¿qué reportes tengo?', 'mis reportes'.",
     parameters_schema: {
       type: "object",
-      additionalProperties: true,
+      properties: {},
+      required: [],
     },
   },
 ];
