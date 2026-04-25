@@ -17,6 +17,7 @@
  */
 
 import { Agent } from "@mastra/core/agent";
+import { RequestContext } from "@mastra/core/request-context";
 
 import { classifyDomain } from "./router";
 import { SYSTEM_PROMPT_BASE } from "./prompts/system";
@@ -361,6 +362,11 @@ export async function processTurn(
 
   const temperature = cls.domain === "puntos_violeta" ? 0 : 0.3;
 
+  // Build canonical RequestContext so reportes tools can override any LLM-hallucinated IDs.
+  const requestContext = new RequestContext();
+  requestContext.set("conversation_id", conversationId);
+  requestContext.set("user_id", input.userId);
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let agentResult: any;
   try {
@@ -369,6 +375,7 @@ export async function processTurn(
       instructions: fullSystemPrompt,
       maxSteps: 15,
       temperature,
+      requestContext,
     });
   } catch (err) {
     console.error("[orchestrator] agent.generate failed:", err);
@@ -466,6 +473,7 @@ export async function processTurn(
           instructions: fullSystemPrompt,
           maxSteps: 1,
           temperature,
+          requestContext,
         },
       );
 

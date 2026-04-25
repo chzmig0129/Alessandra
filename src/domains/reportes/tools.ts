@@ -38,6 +38,38 @@ const EmergencyContactSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
+// Helper — resolve canonical IDs from RequestContext, overriding LLM args
+// ---------------------------------------------------------------------------
+
+function resolveCanonicalIds(
+  input: { conversation_id?: string; user_id?: string },
+  ctx?: { requestContext?: import("@mastra/core/request-context").RequestContext },
+): { conversation_id: string | undefined; user_id: string | undefined } {
+  const canonicalConv = ctx?.requestContext?.has("conversation_id")
+    ? (ctx.requestContext.get("conversation_id") as string)
+    : undefined;
+  const canonicalUser = ctx?.requestContext?.has("user_id")
+    ? (ctx.requestContext.get("user_id") as string)
+    : undefined;
+
+  if (canonicalConv && input.conversation_id && input.conversation_id !== canonicalConv) {
+    console.warn(
+      "[reportes] conversation_id mismatch llm=" + input.conversation_id + " canonical=" + canonicalConv,
+    );
+  }
+  if (canonicalUser && input.user_id && input.user_id !== canonicalUser) {
+    console.warn(
+      "[reportes] user_id mismatch llm=" + input.user_id + " canonical=" + canonicalUser,
+    );
+  }
+
+  return {
+    conversation_id: canonicalConv ?? input.conversation_id,
+    user_id: canonicalUser ?? input.user_id,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // 1. reporte_iniciar
 // ---------------------------------------------------------------------------
 
@@ -101,7 +133,10 @@ export const reporteIniciar = createTool({
       error: z.string(),
     }),
   ]),
-  execute: async ({ conversation_id, lat, lng, image_url, categoria_hint }) => {
+  execute: async ({ conversation_id, lat, lng, image_url, categoria_hint }, ctx) => {
+    const { conversation_id: canonicalConvId } = resolveCanonicalIds({ conversation_id }, ctx);
+    const resolvedConvId = canonicalConvId ?? conversation_id;
+
     const now = new Date();
     const initialSlots: Record<string, unknown> = {};
     if (categoria_hint) {
@@ -116,7 +151,7 @@ export const reporteIniciar = createTool({
       initialSlots["fotos"] = [image_url];
     }
 
-    const result = await setFlowState(conversation_id, {
+    const result = await setFlowState(resolvedConvId, {
       domain: "reportes",
       step: "INICIO",
       slots: initialSlots,
@@ -217,7 +252,10 @@ export const reporteSlotLlenar = createTool({
       error: z.string(),
     }),
   ]),
-  execute: async ({ conversation_id, slot, valor }) => {
+  execute: async ({ conversation_id, slot, valor }, ctx) => {
+    const { conversation_id: canonicalConvId } = resolveCanonicalIds({ conversation_id }, ctx);
+    const resolvedConvId = canonicalConvId ?? conversation_id;
+
     // 0. Decode `valor`: structured slots (ubicacion / fotos / confirmado) come
     //    as JSON-encoded strings from the LLM; plain text slots stay as-is.
     let decodedValor: unknown = valor;
@@ -240,7 +278,7 @@ export const reporteSlotLlenar = createTool({
     }
 
     // 1. Load current flow
-    const flowResult = await getFlowState(conversation_id);
+    const flowResult = await getFlowState(resolvedConvId);
     if (!flowResult.ok) {
       return { ok: false as const, error: flowResult.error };
     }
@@ -280,7 +318,7 @@ export const reporteSlotLlenar = createTool({
     const nextState = transitions(currentState, updatedSlots);
 
     // 5. Persist updated flow
-    const saveResult = await setFlowState(conversation_id, {
+    const saveResult = await setFlowState(resolvedConvId, {
       ...flow,
       step: nextState,
       slots: updatedSlots,
@@ -387,9 +425,13 @@ export const reporteConfirmarYCrear = createTool({
       error: z.string(),
     }),
   ]),
-  execute: async ({ conversation_id, user_id }) => {
+  execute: async ({ conversation_id, user_id }, ctx) => {
+    const { conversation_id: canonicalConvId, user_id: canonicalUserId } = resolveCanonicalIds({ conversation_id, user_id }, ctx);
+    const resolvedConvId = canonicalConvId ?? conversation_id;
+    const resolvedUserId = canonicalUserId ?? user_id;
+
     // 1. Load flow
-    const flowResult = await getFlowState(conversation_id);
+    const flowResult = await getFlowState(resolvedConvId);
     if (!flowResult.ok) {
       return { ok: false as const, error: flowResult.error };
     }
@@ -458,8 +500,8 @@ export const reporteConfirmarYCrear = createTool({
 
     // 6. Call RPC
     const rpcResult = await callCrearLead({
-      conversation_id,
-      user_id,
+      conversation_id: resolvedConvId,
+      user_id: resolvedUserId,
       category: categoria,
       report_type: tipo || null,
       report: descripcion,
@@ -475,7 +517,7 @@ export const reporteConfirmarYCrear = createTool({
     }
 
     // 7. Clear flow on success
-    await clearFlowState(conversation_id);
+    await clearFlowState(resolvedConvId);
 
     // 8. Attach emergency contacts if urgent
     if (urgent) {
@@ -519,8 +561,11 @@ export const reporteCancelar = createTool({
     z.object({ ok: z.literal(true) }),
     z.object({ ok: z.literal(false), error: z.string() }),
   ]),
-  execute: async ({ conversation_id }) => {
-    const result = await clearFlowState(conversation_id);
+  execute: async ({ conversation_id }, ctx) => {
+    const { conversation_id: canonicalConvId } = resolveCanonicalIds({ conversation_id }, ctx);
+    const resolvedConvId = canonicalConvId ?? conversation_id;
+
+    const result = await clearFlowState(resolvedConvId);
     if (!result.ok) {
       return { ok: false as const, error: result.error };
     }
@@ -588,13 +633,16 @@ export const reporteConsultar = createTool({
     z.object({ ok: z.literal(true), lead: LeadSchema }),
     z.object({ ok: z.literal(false), error: z.string() }),
   ]),
-  execute: async ({ user_id, folio }) => {
+  execute: async ({ conversation_id, user_id, folio }, ctx) => {
+    const { user_id: canonicalUserId } = resolveCanonicalIds({ conversation_id, user_id }, ctx);
+    const resolvedUserId = canonicalUserId ?? user_id;
+
     let query = supabaseAdmin
       .from("leads")
       .select(
         "folio, user_id, category, report_type, status, priority, created_at, location_address, report",
       )
-      .eq("user_id", user_id);
+      .eq("user_id", resolvedUserId);
 
     if (folio) {
       query = query.eq("folio", folio);
@@ -663,7 +711,9 @@ export const reporteListarMios = createTool({
     }),
     z.object({ ok: z.literal(false), error: z.string() }),
   ]),
-  execute: async ({ user_id, limit }) => {
+  execute: async ({ user_id, limit }, ctx) => {
+    const { user_id: canonicalUserId } = resolveCanonicalIds({ user_id }, ctx);
+    const resolvedUserId = canonicalUserId ?? user_id;
     const effectiveLimit = limit ?? 10;
 
     const { data, error } = await supabaseAdmin
@@ -671,7 +721,7 @@ export const reporteListarMios = createTool({
       .select(
         "folio, user_id, category, report_type, status, priority, created_at, location_address, report",
       )
-      .eq("user_id", user_id)
+      .eq("user_id", resolvedUserId)
       .order("created_at", { ascending: false })
       .limit(effectiveLimit);
 
