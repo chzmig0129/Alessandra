@@ -32,7 +32,8 @@ import {
   bumpSessionTtl,
 } from "@/memory/session";
 import { loadMessages, appendMessage } from "@/memory/conversation";
-import { getFlowState } from "@/memory/flow-state";
+import { getFlowState, setFlowState } from "@/memory/flow-state";
+import type { Flow } from "@/memory/flow-state";
 
 import {
   checkRateLimit,
@@ -137,6 +138,50 @@ const alessandraAgent = new Agent({
   model: getModel("main") as any,
   tools: ALL_TOOLS,
 });
+
+// ---------------------------------------------------------------------------
+// Auto-fill helper — deterministic slot population from attachments
+// ---------------------------------------------------------------------------
+
+async function autoFillReportesSlots(
+  conversationId: string,
+  flow: Flow | null,
+  attachments?: { lat?: number; lng?: number; imageUrl?: string },
+): Promise<Flow | null> {
+  if (!flow) return null;
+  if (flow.domain !== "reportes") return flow;
+  if (!attachments) return flow;
+
+  const updatedSlots: Record<string, unknown> = { ...flow.slots };
+  let changed = false;
+
+  if (
+    attachments.lat !== undefined &&
+    attachments.lng !== undefined &&
+    updatedSlots.ubicacion === undefined
+  ) {
+    updatedSlots.ubicacion = { lat: attachments.lat, lng: attachments.lng };
+    changed = true;
+  }
+
+  if (attachments.imageUrl && updatedSlots.fotos === undefined) {
+    updatedSlots.fotos = [attachments.imageUrl];
+    changed = true;
+  }
+
+  if (!changed) return flow;
+
+  const updatedFlow: Flow = { ...flow, slots: updatedSlots };
+  const setResult = await setFlowState(conversationId, updatedFlow);
+  if (!setResult.ok) {
+    console.warn("[orchestrator] auto-fill setFlowState failed:", setResult.error);
+    return flow;
+  }
+  console.info(
+    `[orchestrator] auto-filled reportes slots: ${Object.keys(updatedSlots).filter((k) => flow.slots[k] === undefined).join(",")}`,
+  );
+  return updatedFlow;
+}
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -261,7 +306,9 @@ export async function processTurn(
   // ---- 3. Load flow + recent messages ---------------------------------------
 
   const flowResult = await getFlowState(conversationId);
-  const flow = flowResult.ok ? flowResult.flow : null;
+  let flow = flowResult.ok ? flowResult.flow : null;
+  // Auto-fill determinístico de slots reportes desde attachments — evita que el LLM alucine los slots
+  flow = await autoFillReportesSlots(conversationId, flow, input.attachments);
 
   const recentMessages = await loadMessages(
     conversationId,
@@ -326,6 +373,16 @@ export async function processTurn(
   } catch (err) {
     console.error("[orchestrator] agent.generate failed:", err);
     return { text: "Tuve un problema técnico, intenta de nuevo." };
+  }
+
+  // Re-cargar flow porque reporte_iniciar pudo haberlo creado durante el agent run
+  try {
+    const postRunFlowResult = await getFlowState(conversationId);
+    if (postRunFlowResult.ok) {
+      await autoFillReportesSlots(conversationId, postRunFlowResult.flow, input.attachments);
+    }
+  } catch (err) {
+    console.warn("[orchestrator] post-run auto-fill failed:", err);
   }
 
   const topLevelText: string = typeof agentResult.text === "string" ? agentResult.text : "";

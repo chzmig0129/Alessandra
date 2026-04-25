@@ -52,19 +52,43 @@ export const reporteIniciar = createTool({
     "NO llames reporte_confirmar_y_crear sin haber pasado todos los slots primero. " +
     "FLUJO OBLIGATORIO: los 6 slots deben llenarse en ese orden antes de confirmar. " +
     "Recuerda: nunca completes el flujo entero en un solo turn. Después de llenar los primeros 5 slots " +
-    "(hasta fotos), PAUSA con el resumen y espera la confirmación del usuario en el siguiente mensaje.",
+    "(hasta fotos), PAUSA con el resumen y espera la confirmación del usuario en el siguiente mensaje.\n\n" +
+    "USO DE PARAMS OPCIONALES: si el [CONTEXT] del system prompt incluye lat=X, lng=Y, image_url=Z, PÁSALOS al invocar esta tool. " +
+    "La tool los usará para pre-llenar slots ubicacion y fotos automáticamente, ahorrando turnos.",
   inputSchema: z.object({
     conversation_id: z
       .string()
       .min(1)
       .describe("ID de la conversación activa (UUID)."),
+    intencion: z
+      .string()
+      .min(1)
+      .describe(
+        "Frase corta del intent del usuario. Ej: \"reportar bache\", \"hay fuga de agua\", \"se cayó un árbol\".",
+      ),
+    lat: z
+      .number()
+      .optional()
+      .describe(
+        "OPCIONAL. Si el [CONTEXT] del system prompt incluye lat, pásalo aquí — pre-llena el slot ubicacion automáticamente.",
+      ),
+    lng: z
+      .number()
+      .optional()
+      .describe(
+        "OPCIONAL. Si el [CONTEXT] incluye lng, pásalo aquí — junto con lat pre-llena el slot ubicacion.",
+      ),
+    image_url: z
+      .string()
+      .optional()
+      .describe(
+        "OPCIONAL. Si el [CONTEXT] incluye image_url, pásalo aquí — pre-llena el slot fotos.",
+      ),
     categoria_hint: z
       .string()
       .optional()
       .describe(
-        "Sugerencia de categoría ya detectada del mensaje inicial. " +
-        "Ejemplos de strings válidos: 'bache', 'fuga de agua', 'alumbrado', 'árbol caído'. " +
-        "Opcional — si no se detectó aún, omitir.",
+        "OPCIONAL. Hint inicial de categoría inferido del texto del usuario (ej: \"bache\", \"foco\", \"basura\").",
       ),
   }),
   outputSchema: z.discriminatedUnion("ok", [
@@ -77,17 +101,25 @@ export const reporteIniciar = createTool({
       error: z.string(),
     }),
   ]),
-  execute: async ({ conversation_id, categoria_hint }) => {
+  execute: async ({ conversation_id, lat, lng, image_url, categoria_hint }) => {
     const now = new Date();
-    const slots: Record<string, unknown> = {};
+    const initialSlots: Record<string, unknown> = {};
     if (categoria_hint) {
-      slots["categoria_hint"] = categoria_hint;
+      initialSlots["categoria_hint"] = categoria_hint;
+    }
+
+    // Pre-llenar slots desde params opcionales del CONTEXT
+    if (lat !== undefined && lng !== undefined && initialSlots["ubicacion"] === undefined) {
+      initialSlots["ubicacion"] = { lat, lng };
+    }
+    if (image_url && initialSlots["fotos"] === undefined) {
+      initialSlots["fotos"] = [image_url];
     }
 
     const result = await setFlowState(conversation_id, {
       domain: "reportes",
       step: "INICIO",
-      slots,
+      slots: initialSlots,
       started_at: now.toISOString(),
       intent_snapshot: "reporte_ciudadano",
     });
@@ -403,11 +435,21 @@ export const reporteConfirmarYCrear = createTool({
     const tipo = typeof slots["tipo"] === "string" ? slots["tipo"] : "";
     const descripcion =
       typeof slots["descripcion"] === "string" ? slots["descripcion"] : "";
+    const ubicacion = slots["ubicacion"];
 
-    if (!categoria || !tipo || !descripcion) {
+    const missingSlots: string[] = [];
+    if (!categoria) missingSlots.push("categoria");
+    if (!tipo) missingSlots.push("tipo");
+    if (!descripcion) missingSlots.push("descripcion");
+
+    // Validar también ubicacion porque sin ella el RPC fallará
+    const hasUbicacion = ubicacion !== null && typeof ubicacion === "object";
+    if (!hasUbicacion) missingSlots.push("ubicacion");
+
+    if (missingSlots.length > 0) {
       return {
         ok: false as const,
-        error: "Faltan datos requeridos: categoria, tipo o descripcion.",
+        error: `INSTRUCCIÓN_PARA_AGENTE: Faltan slots por llenar: ${missingSlots.join(", ")}. INVOCA reporte_slot_llenar para cada uno (en ese orden) antes de reintentar reporte_confirmar_y_crear. NO le digas al usuario que hubo un error técnico — completa los slots y vuelve a intentar.`,
       };
     }
 
@@ -416,8 +458,7 @@ export const reporteConfirmarYCrear = createTool({
     let lng: number | null = null;
     let locationAddress: string | null = null;
 
-    const ubicacion = slots["ubicacion"];
-    if (ubicacion !== null && typeof ubicacion === "object") {
+    if (hasUbicacion) {
       const u = ubicacion as Record<string, unknown>;
       if (typeof u["lat"] === "number" && typeof u["lng"] === "number") {
         lat = u["lat"];
