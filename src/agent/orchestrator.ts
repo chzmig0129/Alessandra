@@ -66,6 +66,7 @@ import {
   reporteListarMios,
 } from "@/domains/reportes/tools";
 import { consulta_analitica_sql } from "@/tools/shared/sql-sandbox";
+import { knowledgeBuscar } from "@/tools/shared/knowledge";
 
 import { env } from "@/env";
 import type { AlessandraResponse } from "@/types";
@@ -158,8 +159,9 @@ const ALL_TOOLS = {
   reporte_cancelar: reporteCancelar,
   reporte_consultar: reporteConsultar,
   reporte_listar_mios: reporteListarMios,
-  // Shared analytics
+  // Shared analytics + knowledge base
   consulta_analitica_sql,
+  knowledge_buscar: knowledgeBuscar,
 } as const;
 
 // ---------------------------------------------------------------------------
