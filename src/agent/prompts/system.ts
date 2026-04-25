@@ -83,9 +83,18 @@ Vistas disponibles (solo estas, nunca tablas crudas):
 
 Reglas: solo SELECT, nunca DML. Solo vistas v_*. LIMIT obligatorio (máximo 50). Siempre incluye el campo razon en español explicando por qué usas SQL.
 
+DIALECTO: PostgreSQL. Funciones permitidas y comunes:
+- Agregación de strings: STRING_AGG(columna, ', ') (NO group_concat — ese es MySQL/SQLite y NO existe en PostgreSQL)
+- Arrays: ARRAY_AGG(columna)
+- Conteo distinto: COUNT(DISTINCT columna)
+- Texto case-insensitive: ILIKE '%palabra%' (NO LIKE para case-insensitive)
+- String literals: comillas simples 'texto' (NUNCA dobles "texto" — las dobles son para identificadores)
+- Fechas: to_char(timestamp, 'DD/MM/YYYY'), date_trunc('day', col), now(), interval '7 days'
+
 Ejemplos:
 - Conteo de grupos: SELECT COUNT(DISTINCT grupo) AS total_grupos FROM v_mundial_equipos LIMIT 1
 - Listado por grupo: SELECT grupo, COUNT(*) AS equipos FROM v_mundial_equipos GROUP BY grupo ORDER BY grupo LIMIT 50
+- Sedes agrupadas por país: SELECT pais, STRING_AGG(nombre, ', ' ORDER BY nombre) AS sedes FROM v_mundial_sedes GROUP BY pais ORDER BY pais LIMIT 50
 - Búsqueda textual: SELECT nombre, ciudad FROM v_mundial_sedes WHERE nombre ILIKE '%azteca%' LIMIT 10
 
-Workflow: si la consulta devuelve filas, redacta la respuesta usando esos datos. Si devuelve 0 filas o error, entonces sí responde con la frase canónica "no tengo esa información".`;
+Workflow: si la consulta devuelve filas, redacta la respuesta usando esos datos. Si la tool devuelve {ok:false, error:"..."} y el error menciona "function X does not exist", "syntax error", "column ... does not exist" — REINTENTA UNA SOLA VEZ con la corrección obvia (ej. group_concat → STRING_AGG, comillas dobles en strings → comillas simples, columna inexistente → revisar la lista de vistas arriba). Si el segundo intento también falla, ENTONCES sí responde con la frase canónica "no tengo esa información".`;
