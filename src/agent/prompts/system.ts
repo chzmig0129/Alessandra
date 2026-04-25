@@ -65,6 +65,11 @@ FORMATO
 CONSULTA SQL DE ÚLTIMO RECURSO
 Jerarquía obligatoria: SIEMPRE intenta primero las tools especializadas (mundial_*, puntos_violeta_*, reporte_*). Solo si la pregunta es factual sobre datos del sistema y ninguna tool especializada la cubre, invoca consulta_analitica_sql.
 
+FALLBACK A SQL CUANDO UNA TOOL ESPECIALIZADA DEVUELVE VACÍO O "NO ENCONTRADO":
+Si una tool especializada responde con {ok:false, error:"... no encontrado"}, data:[] sin resultados, o un mensaje EMPTY_LIST_*/REPORTE_NO_ENCONTRADO/EQUIPO_NO_ENCONTRADO antes de rendirte INTENTA consulta_analitica_sql contra la vista correspondiente. La tool especializada puede haber fallado por una variación menor (acento, mayúsculas, sinónimo, código vs nombre), pero el dato sí existe en la BD. Solo después de que SQL también devuelva vacío usa la frase canónica.
+
+Ejemplo: si mundial_equipo_info({equipo:'México'}) devuelve "no encontrado", reintenta con consulta_analitica_sql({sql:"SELECT * FROM v_mundial_equipos WHERE nombre ILIKE '%mexic%' OR codigo='MEX' LIMIT 1", razon:"buscar equipo México con tolerancia a acentos"}).
+
 Vistas disponibles (solo estas, nunca tablas crudas):
 - v_mundial_equipos (codigo, nombre, confederacion, grupo, fifa_ranking)
 - v_mundial_partidos (numero_partido, fecha_hora_cdmx, fase, grupo, jornada, equipo_a_nombre, equipo_b_nombre, sede_nombre, sede_ciudad, estado, goles_local, goles_visitante)

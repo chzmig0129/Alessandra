@@ -471,6 +471,8 @@ export async function fetchEquipo(
   codeOrName: string,
 ): Promise<EquipoConPartidosResult> {
   const upper = codeOrName.toUpperCase();
+  // Strip diacritics so "México" matches "Mexico" in nombre/nombre_en columns.
+  const stripped = stripAccents(codeOrName);
 
   // Try exact code first
   let { data: equipo, error: eqErr } = await supabaseAdmin
@@ -481,13 +483,13 @@ export async function fetchEquipo(
 
   if (eqErr) return { equipo: null, proximos_partidos: [], error: eqErr.message };
 
-  // If no exact code match, search by name (nombre OR nombre_en ILIKE)
+  // If no exact code match, search by name (nombre OR nombre_en ILIKE), accent-stripped
   if (!equipo) {
     const { data: byName, error: nameErr } = await supabaseAdmin
       .from("v_mundial_equipos")
       .select("*")
       .or(
-        `nombre.ilike.%${codeOrName}%,nombre_en.ilike.%${codeOrName}%`,
+        `nombre.ilike.%${stripped}%,nombre_en.ilike.%${stripped}%`,
       )
       .limit(1)
       .maybeSingle();
