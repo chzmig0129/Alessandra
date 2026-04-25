@@ -148,6 +148,11 @@ export const reporteSlotLlenar = createTool({
     "  Y PARA. NO llenes confirmado:true en este turn. NO llames reporte_confirmar_y_crear.\n" +
     "- Turn donde el usuario dice sí/confirmo: SOLO entonces llamas slot_llenar(slot:\"confirmado\", valor:\"true\") " +
     "seguido de reporte_confirmar_y_crear, y redactas el mensaje con el folio.\n\n" +
+    "REGLA ATÓMICA — slot \"confirmado\" + reporte_confirmar_y_crear son INSEPARABLES:\n" +
+    "Cuando llames slot_llenar({slot:\"confirmado\", valor:\"true\"}), DEBES en el MISMO TURN, sin pausar ni redactar texto intermedio, " +
+    "llamar IMMEDIATAMENTE después reporte_confirmar_y_crear({conversation_id, user_id}). " +
+    "NO redactes nada al usuario entre ambas llamadas. NO esperes otro turn. " +
+    "Solo después de obtener el folio (CUH-…) de reporte_confirmar_y_crear, redactas el mensaje final al usuario con el folio.\n\n" +
     "REGLAS DURAS:\n" +
     "- NUNCA llames reporte_confirmar_y_crear sin haber llenado confirmado:true primero.\n" +
     "- El error EL FLUJO NO ESTÁ EN ESTADO CONFIRMACION significa que te saltaste slots — vuelve a llenarlos en orden.",
@@ -334,7 +339,9 @@ export const reporteConfirmarYCrear = createTool({
     "Devuelve folio (CUH-YYYYMMDD-NNN) y, si urgente, contactos de emergencia. " +
     "REGLA: solo invoca esta tool en el TURN POSTERIOR a recibir el sí/confirmo del usuario. " +
     "Si la estás invocando en el mismo turn donde recolectaste los datos, te SALTASTE la pausa de confirmación " +
-    "— vuelve a redactar el resumen y espera la respuesta del usuario.",
+    "— vuelve a redactar el resumen y espera la respuesta del usuario. " +
+    "Si recibes el error con prefijo \"El flujo no está listo para crear\", significa que faltan slots — vuelve a slot_llenar para completarlos. " +
+    "Si ya está en GUARDADO pero esta tool nunca devolvió folio, INVÓCALA igual — esta tool ahora es idempotente respecto a GUARDADO mientras el lead no exista.",
   inputSchema: z.object({
     conversation_id: z
       .string()
@@ -372,10 +379,13 @@ export const reporteConfirmarYCrear = createTool({
 
     const flow = flowResult.flow;
 
-    if (flow.step !== "CONFIRMACION") {
+    // Aceptar CONFIRMACION o GUARDADO. Si GUARDADO ya existe pero no hay lead en BD,
+    // significa que slot_llenar(confirmado:true) avanzó la state machine pero el agente
+    // no encadenó confirmar_y_crear. Rescatable.
+    if (flow.step !== "CONFIRMACION" && flow.step !== "GUARDADO") {
       return {
         ok: false as const,
-        error: `El flujo no está en estado CONFIRMACION (estado actual: ${flow.step}).`,
+        error: `El flujo no está listo para crear (estado actual: ${flow.step}). Faltan slots por llenar.`,
       };
     }
 
