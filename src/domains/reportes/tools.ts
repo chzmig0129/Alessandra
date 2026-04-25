@@ -15,7 +15,7 @@ import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 
 import { supabaseAdmin } from "@/db/supabase-server";
-import { getFlowState, setFlowState, clearFlowState } from "@/memory/flow-state";
+import { getFlowState, setFlowState, setFlowSlot, clearFlowState } from "@/memory/flow-state";
 import { transitions, nextRequiredSlot } from "./state-machine";
 import type { ReporteState } from "./state-machine";
 import { SLOT_CONFIG } from "./slots";
@@ -408,25 +408,44 @@ export const reporteSlotLlenar = createTool({
       }
     }
 
-    // 3. Mutate slots and persist
-    const updatedSlots: Record<string, unknown> = { ...flow.slots, [slot]: decodedValor };
-
-    // 4. Compute next state
-    const nextState = transitions(currentState, updatedSlots);
-
-    // 5. Persist updated flow
-    const saveResult = await setFlowState(resolvedConvId, {
-      ...flow,
-      step: nextState,
-      slots: updatedSlots,
-    });
-
-    if (!saveResult.ok) {
-      return { ok: false as const, error: saveResult.error };
+    // 3. Atomic per-slot write — eliminates race when LLM fires parallel slot_llenar calls.
+    //    Each call does jsonb_set at the Postgres level; no read-modify-write of the full JSONB.
+    const slotWriteResult = await setFlowSlot(resolvedConvId, slot, decodedValor);
+    if (!slotWriteResult.ok) {
+      return { ok: false as const, error: slotWriteResult.error };
     }
 
-    // 6. Determine next prompt (if any required slots remain)
-    const nextSlotInfo = nextRequiredSlot(nextState, updatedSlots);
+    // 4. Re-read flow to get the current slots after this atomic write.
+    //    (Other concurrent calls may have also written their slots by now — that's fine.)
+    const freshFlowResult = await getFlowState(resolvedConvId);
+    const freshSlots: Record<string, unknown> =
+      freshFlowResult.ok && freshFlowResult.flow
+        ? freshFlowResult.flow.slots
+        : { ...flow.slots, [slot]: decodedValor }; // fallback: merge locally if re-read fails
+
+    // 5. Compute the correct final state by walking the state machine from INICIO
+    //    until stable. This handles the case where multiple slots were filled
+    //    in parallel — the step needs to reflect ALL filled slots, not just one
+    //    transition from the current (possibly stale) state.
+    let nextState: ReporteState = "INICIO";
+    for (let i = 0; i < 10; i++) {
+      const advanced = transitions(nextState, freshSlots);
+      if (advanced === nextState) break;
+      nextState = advanced;
+    }
+
+    // 6. Best-effort step update — step is informational for next_prompt. Race is acceptable.
+    if (nextState !== flow.step) {
+      const freshFlow = freshFlowResult.ok && freshFlowResult.flow ? freshFlowResult.flow : flow;
+      void setFlowState(resolvedConvId, {
+        ...freshFlow,
+        step: nextState,
+        slots: freshSlots,
+      });
+    }
+
+    // 7. Determine next prompt (if any required slots remain)
+    const nextSlotInfo = nextRequiredSlot(nextState, freshSlots);
     const nextPrompt = nextSlotInfo?.prompt;
 
     return {

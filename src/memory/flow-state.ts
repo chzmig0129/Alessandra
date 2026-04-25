@@ -125,6 +125,26 @@ export async function setFlowState(
 }
 
 /**
+ * Atomically sets a single slot key inside conversations.current_flow.slots
+ * via the set_flow_slot RPC. Safe under concurrent calls because Postgres
+ * does the jsonb_set atomically per row. Caller must ensure the flow exists
+ * (e.g., reporte_iniciar ran first); the RPC is a no-op when current_flow IS NULL.
+ */
+export async function setFlowSlot(
+  conversationId: string,
+  slotKey: string,
+  slotValue: unknown,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const { error } = await supabaseAdmin.rpc("set_flow_slot", {
+    p_conversation_id: conversationId,
+    p_slot_key: slotKey,
+    p_slot_value: slotValue,
+  });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+/**
  * Clear the flow state for a conversation (set `current_flow` to null).
  *
  * Returns `{ ok: true }` or `{ ok: false, error }`.

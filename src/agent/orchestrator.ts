@@ -224,6 +224,39 @@ export async function processTurn(
 
   const conversationId = session.conversationId;
 
+  // ---- 1b. Image carryover — persist latest uploaded image; recover if missing ----
+  // Persist the latest uploaded image so subsequent turns within the same
+  // conversation can re-use it even if the user doesn't re-attach.
+  let effectiveAttachments = input.attachments;
+  if (effectiveAttachments?.imageUrl) {
+    await supabaseAdmin
+      .from("conversations")
+      .update({
+        last_image_url: effectiveAttachments.imageUrl,
+        last_image_at: new Date().toISOString(),
+      })
+      .eq("id", conversationId);
+  } else {
+    // No image in this turn — try to recover the most recent one from this
+    // conversation if it's still fresh (15 min window).
+    const { data: convRow } = await supabaseAdmin
+      .from("conversations")
+      .select("last_image_url, last_image_at")
+      .eq("id", conversationId)
+      .maybeSingle();
+    const lastUrl = convRow?.last_image_url as string | null | undefined;
+    const lastAt = convRow?.last_image_at as string | null | undefined;
+    if (lastUrl && lastAt) {
+      const ageMs = Date.now() - new Date(lastAt).getTime();
+      if (ageMs < 15 * 60 * 1000) {
+        effectiveAttachments = {
+          ...(effectiveAttachments ?? {}),
+          imageUrl: lastUrl,
+        };
+      }
+    }
+  }
+
   // ---- 2. Pre-LLM guardrails ------------------------------------------------
 
   // Rate limit
@@ -240,8 +273,8 @@ export async function processTurn(
     let emergencyText: string;
     try {
       const canalizacion = await emergencia_mujer_canalizar({
-        lat: input.attachments?.lat,
-        lng: input.attachments?.lng,
+        lat: effectiveAttachments?.lat,
+        lng: effectiveAttachments?.lng,
       });
 
       // Build Canalizacion shape expected by genderEmergencyResponse.
@@ -312,7 +345,7 @@ export async function processTurn(
   const flowResult = await getFlowState(conversationId);
   let flow = flowResult.ok ? flowResult.flow : null;
   // Auto-fill determinístico de slots reportes desde attachments — evita que el LLM alucine los slots
-  flow = await autoFillReportesSlots(conversationId, flow, input.attachments);
+  flow = await autoFillReportesSlots(conversationId, flow, effectiveAttachments);
 
   const recentMessages = await loadMessages(
     conversationId,
@@ -360,7 +393,7 @@ export async function processTurn(
   // its tool belt and uses it.  Does NOT override a strong domain signal.
   if (
     (cls.domain === "fuera_alcance" || cls.confidence < 0.5) &&
-    input.attachments?.imageUrl &&
+    effectiveAttachments?.imageUrl &&
     /describ|analiz|identific|qu[eé] hay|qu[eé] es esto|qu[eé] muestra/i.test(input.userMessage)
   ) {
     cls = { domain: "reportes", confidence: 0.5, reason: "image_describe_bias" };
@@ -380,11 +413,11 @@ export async function processTurn(
   // values via the LLM-provided arguments.
   const contextLine =
     `\n\n[CONTEXT: conversation_id=${conversationId}, user_id=${input.userId}` +
-    (input.attachments?.lat !== undefined
-      ? `, lat=${input.attachments.lat}, lng=${input.attachments.lng}`
+    (effectiveAttachments?.lat !== undefined
+      ? `, lat=${effectiveAttachments.lat}, lng=${effectiveAttachments.lng}`
       : "") +
-    (input.attachments?.imageUrl
-      ? `, image_url=${input.attachments.imageUrl}`
+    (effectiveAttachments?.imageUrl
+      ? `, image_url=${effectiveAttachments.imageUrl}`
       : "") +
     "]";
 
@@ -413,12 +446,12 @@ export async function processTurn(
   requestContext.set("conversation_id", conversationId);
   requestContext.set("user_id", input.userId);
   // Inject attachment data so tools can override LLM-passed image_url / lat / lng.
-  if (input.attachments?.imageUrl) {
-    requestContext.set("image_url", input.attachments.imageUrl);
+  if (effectiveAttachments?.imageUrl) {
+    requestContext.set("image_url", effectiveAttachments.imageUrl);
   }
-  if (input.attachments?.lat !== undefined && input.attachments?.lng !== undefined) {
-    requestContext.set("lat", input.attachments.lat);
-    requestContext.set("lng", input.attachments.lng);
+  if (effectiveAttachments?.lat !== undefined && effectiveAttachments?.lng !== undefined) {
+    requestContext.set("lat", effectiveAttachments.lat);
+    requestContext.set("lng", effectiveAttachments.lng);
   }
 
   // Build AsyncLocalStorage turn context — bulletproof fallback for tools that
@@ -426,7 +459,7 @@ export async function processTurn(
   const turnCtx: TurnContext = {
     conversationId,
     userId: input.userId,
-    attachments: input.attachments,
+    attachments: effectiveAttachments,
   };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -450,7 +483,7 @@ export async function processTurn(
   try {
     const postRunFlowResult = await getFlowState(conversationId);
     if (postRunFlowResult.ok) {
-      await autoFillReportesSlots(conversationId, postRunFlowResult.flow, input.attachments);
+      await autoFillReportesSlots(conversationId, postRunFlowResult.flow, effectiveAttachments);
     }
   } catch (err) {
     console.warn("[orchestrator] post-run auto-fill failed:", err);
@@ -507,11 +540,11 @@ export async function processTurn(
         ? agentResult.toolResults
         : [];
 
-  // Salvaguarda determinística: si attachments.imageUrl está seteado y un lead se
+  // Salvaguarda determinística: si effectiveAttachments.imageUrl está seteado y un lead se
   // creó exitosamente en este turn pero su media_urls quedó vacío (porque el LLM
   // pasó 'sin_foto' y el override en slot_llenar no se propagó), patchearlo en BD
   // directamente. Idempotente — si ya tiene media_urls, no hace nada.
-  if (input.attachments?.imageUrl) {
+  if (effectiveAttachments?.imageUrl) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const successfulCreate = toolResults.find((tr: any) =>
       tr?.toolName === "reporte_confirmar_y_crear" &&
@@ -531,7 +564,7 @@ export async function processTurn(
         if (currentUrls.length === 0) {
           await supabaseAdmin
             .from("leads")
-            .update({ media_urls: [input.attachments.imageUrl] })
+            .update({ media_urls: [effectiveAttachments.imageUrl] })
             .eq("id", leadId);
           console.info("[orchestrator] post-create media_urls patch applied lead_id=" + leadId);
         }
