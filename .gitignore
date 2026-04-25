@@ -2,6 +2,8 @@
 # Dolt database files (added by bd init)
 .dolt/
 *.db
+*.db-shm
+*.db-wal
 
 # Local MCP config (contains secrets)
 .mcp.json
@@ -14,7 +16,9 @@ out/
 node_modules/
 
 # Env files with secrets
-.env*.local
+.env
+.env.*
+!.env.example
 
 # Vercel
 .vercel/
@@ -27,3 +31,7 @@ coverage/
 
 # Build output
 dist/
+
+# Supabase CLI local state (can leak pooler URLs / project refs)
+supabase/.temp/
+supabase/.branches/
