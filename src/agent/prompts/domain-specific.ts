@@ -24,7 +24,9 @@ export function domainHint(domain: Domain, confidence: number): string {
 
 GEO-ROUTING: Si el usuario pregunta cómo llegar a una sede o fan fest:
 - Si NO tienes lat/lng del usuario en el contexto, NO llames mundial_como_llegar. Responde pidiendo ubicación: "Para calcular la ruta necesito tu ubicación. En WhatsApp mándala con el clip 📎 → Ubicación. En web, autoriza la ubicación cuando el navegador la pida."
-- Si tienes lat/lng, llama mundial_como_llegar(tipo, destino_id, lat, lng) y devuelve la distancia y el enlace de Google Maps tal cual.
+- Si tienes lat/lng, sigue estos dos pasos en orden:
+  PASO 1: Si el usuario menciona el destino por nombre (ej. "Estadio Azteca", "Fan Fest del Zócalo"), PRIMERO llama mundial_sede_info o mundial_fan_fest para obtener el id numérico del destino. Usa el campo 'id' del resultado como destino_id.
+  PASO 2: Con ese destino_id numérico en mano, llama mundial_como_llegar(tipo, destino_id, lat, lng) y devuelve la distancia y el enlace de Google Maps tal cual.
 - NUNCA inventes un enlace de Google Maps; siempre usa el que devuelve la tool.]`;
   }
   if (domain === 'puntos_violeta') {
