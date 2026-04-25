@@ -106,6 +106,7 @@ async function main() {
     userMessage:
       "Quiero reportar un bache, que esta en estas coordenadas 19.44095744038439, -99.1550650218138 en el centro de la alcaldía Cuauhtémoc.",
     attachments: { imageUrl },
+    channel: "web",
   });
   printTurn("T1", t1);
 
@@ -121,6 +122,7 @@ async function main() {
     userId,
     userMessage: "si",
     attachments: { imageUrl }, // simulating subsequent webhook turn (no new image)
+    channel: "web",
   });
   printTurn("T2", t2);
 
@@ -134,6 +136,7 @@ async function main() {
     userId,
     userMessage: "confirmo",
     attachments: { imageUrl },
+    channel: "web",
   });
   printTurn("T3", t3);
 

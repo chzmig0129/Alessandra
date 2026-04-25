@@ -86,6 +86,7 @@ export async function POST(req: Request): Promise<Response> {
     const result = await processTurn({
       userMessage: message,
       userId,
+      channel: "web",
       sessionId,
       attachments,
     });

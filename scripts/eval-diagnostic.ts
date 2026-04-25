@@ -352,6 +352,7 @@ async function runOne(c: DiagnosticCase): Promise<CaseRecord> {
       userMessage: c.prompt,
       userId: userR.user.id,
       sessionId,
+      channel: "web",
     });
   } catch (e) {
     return {

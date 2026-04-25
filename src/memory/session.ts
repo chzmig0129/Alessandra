@@ -89,15 +89,16 @@ export async function getOrCreateUser(
  */
 export async function getOrCreateActiveSession(
   userId: string,
-  channel = "web",
+  channel: "whatsapp" | "web" | "voice",
 ): Promise<ActiveSession> {
   const now = new Date();
 
-  // Try to find an existing live session
+  // Try to find an existing live session for this specific channel
   const { data: existing, error: selectError } = await supabaseAdmin
     .from("conversations")
     .select("id, messages")
     .eq("user_id", userId)
+    .eq("channel", channel)
     .gt("expires_at", now.toISOString())
     .order("created_at", { ascending: false })
     .limit(1)

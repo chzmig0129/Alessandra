@@ -104,6 +104,7 @@ async function main() {
     userId,
     userMessage: "Que hay en la foto?",
     attachments: { imageUrl },
+    channel: "web",
   });
   printTurn("T1", t1);
 
@@ -118,6 +119,7 @@ async function main() {
       "si quiero hacer un reporte\n\nQuiero reportar un bache, que esta en estas coordenadas 19.44095744038439, -99.1550650218138 en el centro de la alcaldía Cuauhtémoc.",
     // attachments NO se pasa — simula que el usuario en WhatsApp solo adjuntó
     // la foto en T1 y los siguientes turns son texto plano.
+    channel: "web",
   });
   printTurn("T2", t2);
 
@@ -130,6 +132,7 @@ async function main() {
   const t3 = await processTurn({
     userId,
     userMessage: "confirmo",
+    channel: "web",
   });
   printTurn("T3", t3);
 

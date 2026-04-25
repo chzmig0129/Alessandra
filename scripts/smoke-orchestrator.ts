@@ -16,6 +16,7 @@ async function smoke(label: string, message: string, attachments?: any) {
     userId: userResult.user.id,
     sessionId,
     attachments,
+    channel: "web",
   });
   const ms = Date.now() - start;
   console.log(`Latency: ${ms}ms`);

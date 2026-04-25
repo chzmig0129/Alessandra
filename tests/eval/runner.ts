@@ -186,6 +186,7 @@ async function runCase(evalCase: EvalCase): Promise<CaseResult> {
       userId,
       sessionId,
       attachments: normaliseAttachments(turn.attachments),
+      channel: "web",
     });
   }
 

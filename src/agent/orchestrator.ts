@@ -187,6 +187,7 @@ async function autoFillReportesSlots(
 export interface ProcessTurnInput {
   userMessage: string;
   userId: string;
+  channel: "whatsapp" | "web" | "voice";
   sessionId?: string;
   attachments?: {
     imageUrl?: string;
@@ -209,7 +210,7 @@ export async function processTurn(
   // ---- 1. Session -----------------------------------------------------------
   let session: Awaited<ReturnType<typeof getOrCreateActiveSession>>;
   try {
-    session = await getOrCreateActiveSession(input.userId);
+    session = await getOrCreateActiveSession(input.userId, input.channel);
   } catch (err) {
     console.error("[orchestrator] getOrCreateActiveSession failed:", err);
     return { text: "No pude cargar la sesión." };

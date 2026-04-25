@@ -85,6 +85,7 @@ async function main() {
     userId,
     userMessage: "Que hay en la foto?",
     attachments: { imageUrl },
+    channel: "web",
   });
   printTurn("T1", t1);
 
@@ -93,6 +94,7 @@ async function main() {
   const t2 = await processTurn({
     userId,
     userMessage: "Queria reportar un árbol caído",
+    channel: "web",
   });
   printTurn("T2", t2);
 
@@ -104,12 +106,13 @@ async function main() {
     userId,
     userMessage:
       "Pues sí, está bloqueando la ranqueta. Las ubicaciones te las paso y la imagen ya te la acabo de pasar coordenadas 19.44095744038439, -99.1550650218138 en el centro de la alcaldía Cuauhtémoc.",
+    channel: "web",
   });
   printTurn("T3", t3);
 
   // T4: confirmo
   console.log(`\n========== TURN 4: "Confirmo" ==========`);
-  const t4 = await processTurn({ userId, userMessage: "Confirmo" });
+  const t4 = await processTurn({ userId, userMessage: "Confirmo", channel: "web" });
   printTurn("T4", t4);
 
   // Inspect leads

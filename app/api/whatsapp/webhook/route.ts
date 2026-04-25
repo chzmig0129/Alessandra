@@ -255,6 +255,7 @@ async function processInBackground(
     const result = await processTurn({
       userId,
       userMessage,
+      channel: "whatsapp",
       attachments,
     });
     responseText = result.text;
