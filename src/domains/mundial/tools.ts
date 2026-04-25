@@ -237,18 +237,16 @@ export const mundialPartidosBuscar = createTool({
 export const mundialSedeInfo = createTool({
   id: "mundial_sede_info",
   description:
-    "Devuelve información completa de un estadio sede del Mundial 2026: " +
-    "nombre, ciudad, dirección, capacidad, zona horaria, Google Maps. " +
-    "Úsala para: ¿dónde está el Estadio Azteca?, ¿cómo llego al SoFi Stadium?, etc.",
+    "Devuelve información completa de un estadio sede del Mundial 2026 (nombre, ciudad, dirección, capacidad, zona horaria, Google Maps). " +
+    "Una invocación devuelve todos los datos disponibles del estadio.",
   inputSchema: z.object({
     id_or_city: z
       .string()
       .describe(
-        "Acepta CUALQUIERA de los tres formatos en UNA SOLA llamada: ID numérico, nombre del estadio o nombre de ciudad. " +
-          "El LLM no debe iterar formatos — cualquiera de los tres devuelve el mismo registro. " +
-          "Ej: '8', 'Estadio Azteca' y 'Ciudad de México' devuelven el mismo estadio. " +
-          "Otros ejemplos: '1', 'SoFi Stadium', 'Los Angeles'. " +
-          "Usa el valor que el usuario mencionó directamente.",
+        "Identificador de la sede. Acepta UNO de tres formatos equivalentes que devuelven el mismo registro: " +
+          "(a) ID numérico (ej: \"8\"), (b) nombre del estadio (ej: \"Estadio Azteca\"), o (c) nombre de ciudad (ej: \"Ciudad de México\"). " +
+          "El formato más natural es el nombre del estadio si lo conoces; la ciudad funciona cuando solo sabes la ubicación. " +
+          "Una sola invocación es suficiente — si la primera devuelve ok:false, el lugar no existe en la base, no reintentes con otro formato.",
       ),
   }),
   outputSchema: z.discriminatedUnion("ok", [

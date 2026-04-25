@@ -65,6 +65,20 @@ import { env } from "@/env";
 import type { AlessandraResponse } from "@/types";
 
 // ---------------------------------------------------------------------------
+// Language detection helper
+// ---------------------------------------------------------------------------
+
+function detectUserLanguage(text: string): "es" | "en" | "pt" | "fr" | "it" {
+  const t = text.toLowerCase();
+  // Heurística: portugués primero (overlap con español); luego inglés; luego francés/italiano; default español.
+  if (/(\bquando|onde|qual|jogo|copa do mundo|estádio|por favor|olá|obrigado|você|também|não\b)/.test(t)) return "pt";
+  if (/(\bwhen|where|what|how|the|stadium|world cup|please|hello|thank you|today|tomorrow|do you\b)/.test(t)) return "en";
+  if (/(\bquand|où|comment|stade|coupe du monde|bonjour|merci|aujourd|s.il vous plaît\b)/.test(t)) return "fr";
+  if (/(\bquando|dove|come|stadio|coppa del mondo|per favore|ciao|grazie|oggi|domani\b)/.test(t)) return "it";
+  return "es";
+}
+
+// ---------------------------------------------------------------------------
 // Static response templates
 // ---------------------------------------------------------------------------
 
@@ -260,7 +274,13 @@ export async function processTurn(
 
   // ---- 5. System prompt ----------------------------------------------------
 
-  const systemPrompt = SYSTEM_PROMPT_BASE + domainHint(cls.domain, cls.confidence);
+  const detectedLang = detectUserLanguage(input.userMessage);
+  const langDirective =
+    "\n\n[OUTPUT LANGUAGE LOCK: " +
+    detectedLang +
+    " — Generate the ENTIRE response in this language. This overrides any other language hint. Names of places (Estadio Azteca, Alcaldía Cuauhtémoc) and raw data from tools (phones, addresses) stay literal.]";
+
+  const systemPrompt = SYSTEM_PROMPT_BASE + domainHint(cls.domain, cls.confidence) + langDirective;
 
   // Inject conversation/user context so tools that need them can receive the
   // values via the LLM-provided arguments.
@@ -449,6 +469,7 @@ export async function processTurn(
         : null,
       latency_ms: latencyMs,
       classification: cls,
+      detected_lang: detectedLang,
     },
   };
 }

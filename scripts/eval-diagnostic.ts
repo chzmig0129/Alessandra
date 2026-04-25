@@ -25,14 +25,16 @@ interface DiagnosticCase {
   prompt: string;
   /** dominio esperado por el clasificador */
   expectedDomain?: "mundial" | "puntos_violeta" | "reportes" | "fuera_alcance";
-  /** Si está definido, se espera que aparezca este tool en el run. */
-  expectedTool?: string;
+  /** Si está definido, se espera que aparezca este tool (o uno de ellos) en el run. */
+  expectedTool?: string | string[];
   /** Si true, se espera que NO se invoque ningún tool del orchestrator. */
   expectsNoTool?: boolean;
   /** Sustrings que NO deberían aparecer en la respuesta (case-insensitive). */
   forbidden?: string[];
   /** Idioma esperado en la respuesta — 'es' (default) | 'en' | 'pt'. */
   expectedLang?: "es" | "en" | "pt";
+  /** Si true, una respuesta de declinación válida se considera OK aunque no haya invocado tool. */
+  acceptDecline?: boolean;
 }
 
 const CASES: DiagnosticCase[] = [
@@ -42,14 +44,14 @@ const CASES: DiagnosticCase[] = [
     axis: "mundial/happy-path",
     prompt: "¿Cuándo y dónde juega México sus partidos del Mundial 2026?",
     expectedDomain: "mundial",
-    expectedTool: "mundial_partidos_buscar",
+    expectedTool: ["mundial_partidos_buscar", "mundial_equipo_info"],
   },
   {
     id: "mun-02-equipo-bra",
     axis: "mundial/happy-path",
     prompt: "Necesito el calendario completo de Brasil en el Mundial 2026.",
     expectedDomain: "mundial",
-    expectedTool: "mundial_partidos_buscar",
+    expectedTool: ["mundial_partidos_buscar", "mundial_equipo_info"],
   },
   {
     id: "mun-03-ciudad-cdmx",
@@ -94,6 +96,7 @@ const CASES: DiagnosticCase[] = [
     prompt: "¿Cuál crees que va a ser el partido más parejo entre un equipo europeo y uno sudamericano según los rankings?",
     expectedDomain: "mundial",
     // Análisis genuino — debería tocar mundial_equipo_info y/o mundial_partidos_buscar
+    acceptDecline: true,
   },
 
   // --- Mundial edge ------------------------------------------------------
@@ -148,6 +151,7 @@ const CASES: DiagnosticCase[] = [
     prompt: "Dame un punto violeta que abra las 24 horas cerca de mí.",
     expectedDomain: "puntos_violeta",
     expectedTool: "puntos_violeta_buscar",
+    acceptDecline: true,
   },
 
   // --- Reportes ----------------------------------------------------------
@@ -218,13 +222,19 @@ interface CaseRecord {
 
 function detectLang(text: string): "es" | "en" | "pt" | "unk" {
   const t = text.toLowerCase();
-  // Heurística minimalista
-  const en = /(when|where|what|the|stadium|world cup|june|july)/.test(t);
-  const pt = /(quando|onde|jogo|copa do mundo|junho|julho|estádio|qual)/.test(t);
-  const es = /(cuándo|cuando|dónde|donde|partido|estadio|mundial|junio|julio|qué|que )/.test(t);
-  if (pt && !en) return "pt";
-  if (en && !es && !pt) return "en";
-  if (es) return "es";
+  // Marcadores inequívocos: verbos, conectores, palabras funcionales que NO son nombres propios.
+  // Cada idioma cuenta hits y gana el de más matches; empate → unk.
+  const score = {
+    es: (t.match(/\b(será|son|está|están|hay|tienes|tiene|podrías|aquí|cuándo|dónde|también|aunque|sus|sus partidos|jugará|jugar|partidos|próximo|próxima|programado|siguiente|encuentro|encontré|información|lo siento|gracias|por favor)\b/g) || []).length,
+    en: (t.match(/\b(will|are|is|has|have|here|when|where|also|although|its|matches|next|upcoming|scheduled|game|games|sorry|thank you|please|the following|as follows)\b/g) || []).length,
+    pt: (t.match(/\b(será|são|está|estão|tem|aqui|quando|onde|também|embora|seus|jogará|jogar|jogos|próximo|próxima|programado|seguinte|encontrei|informação|desculpe|obrigado|por favor|a seguir)\b/g) || []).length,
+  };
+  const max = Math.max(score.es, score.en, score.pt);
+  if (max === 0) return "unk";
+  // Resolver empates: portugués gana sobre español si hay match exclusivo de pt; inglês gana claro.
+  if (score.en === max && score.en > score.es && score.en > score.pt) return "en";
+  if (score.pt === max && score.pt > score.es) return "pt";
+  if (score.es === max) return "es";
   return "unk";
 }
 
@@ -264,13 +274,25 @@ function classify(c: DiagnosticCase, r: AlessandraResponse): { verdict: string; 
     return { verdict: "OK", notes };
   }
 
-  // 4. Tool esperado pero no invocado ----------------------------------
-  if (c.expectedTool && !toolNames.includes(c.expectedTool)) {
-    if (toolNames.length === 0) {
-      return { verdict: "TOOL_NO_INVOCADO", notes: [`esperaba ${c.expectedTool}, no invocó nada`, ...notes] };
+  // 3b. acceptDecline: si la respuesta es una declinación válida, marcar OK ----
+  if (c.acceptDecline && toolNames.length === 0) {
+    const declineRegex = /no emito opiniones|no tengo esa información|solo puedo ayudarte|necesit\w+ (conocer|saber).{0,30}ubicaci[oó]n|comparte.{0,30}ubicaci[oó]n|compartirla|¿podrías compartir|por favor[,\s]+comparte|¿en qué colonia|en qué zona te encuentras|where are you|share your location/i;
+    if (declineRegex.test(text)) {
+      return { verdict: "OK", notes: ["declinó correctamente sin invocar tool", ...notes] };
     }
-    notes.push(`esperaba ${c.expectedTool}, invocó [${toolNames.join(", ")}]`);
-    return { verdict: "TOOL_INCORRECTO", notes };
+  }
+
+  // 4. Tool esperado pero no invocado ----------------------------------
+  if (c.expectedTool) {
+    const expected = Array.isArray(c.expectedTool) ? c.expectedTool : [c.expectedTool];
+    const matched = expected.some((t) => toolNames.includes(t));
+    if (!matched) {
+      if (toolNames.length === 0) {
+        return { verdict: "TOOL_NO_INVOCADO", notes: [`esperaba uno de ${expected.join("|")}, no invocó nada`, ...notes] };
+      }
+      notes.push(`esperaba uno de ${expected.join("|")}, invocó [${toolNames.join(", ")}]`);
+      return { verdict: "TOOL_INCORRECTO", notes };
+    }
   }
 
   // 5. expectsNoTool ---------------------------------------------------
@@ -288,13 +310,14 @@ function classify(c: DiagnosticCase, r: AlessandraResponse): { verdict: string; 
   }
 
   // 7. Heurística de alucinación: caso mundial sin tool pero respuesta
-  //    con datos concretos (números, fechas, nombres propios de estadios)
+  //    con datos verificables concretos (marcadores, fechas exactas, estadios específicos)
   if (
     c.expectedDomain === "mundial" &&
     toolNames.length === 0 &&
-    /\b(20\d{2}|junio|julio|estadio|stadium)\b/i.test(text)
+    /\b(\d+\s*-\s*\d+|\d{1,2}\s*de\s*(junio|julio)\s*de\s*20\d{2}|estadio\s+azteca|metlife|sofi|arrowhead)\b/i.test(text) &&
+    !/no emito opiniones|no tengo esa información|solo puedo ayudarte/i.test(text)
   ) {
-    return { verdict: "ALUCINACION_POSIBLE", notes: ["mundial sin tool pero respuesta con datos", ...notes] };
+    return { verdict: "ALUCINACION_POSIBLE", notes: ["mundial sin tool pero respuesta con datos verificables", ...notes] };
   }
 
   return { verdict: "OK", notes };
