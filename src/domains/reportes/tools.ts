@@ -180,14 +180,8 @@ export const reporteSlotLlenar = createTool({
     "  Y PARA. NO llenes confirmado:true en este turn. NO llames reporte_confirmar_y_crear.\n" +
     "- Turn donde el usuario dice sí/confirmo: SOLO entonces llamas slot_llenar(slot:\"confirmado\", valor:\"true\") " +
     "seguido de reporte_confirmar_y_crear, y redactas el mensaje con el folio.\n\n" +
-    "REGLA ATÓMICA — slot \"confirmado\" + reporte_confirmar_y_crear son INSEPARABLES:\n" +
-    "Cuando llames slot_llenar({slot:\"confirmado\", valor:\"true\"}), DEBES en el MISMO TURN, sin pausar ni redactar texto intermedio, " +
-    "llamar IMMEDIATAMENTE después reporte_confirmar_y_crear({conversation_id, user_id}). " +
-    "NO redactes nada al usuario entre ambas llamadas. NO esperes otro turn. " +
-    "Solo después de obtener el folio (CUH-…) de reporte_confirmar_y_crear, redactas el mensaje final al usuario con el folio.\n\n" +
-    "REGLAS DURAS:\n" +
-    "- NUNCA llames reporte_confirmar_y_crear sin haber llenado confirmado:true primero.\n" +
-    "- El error EL FLUJO NO ESTÁ EN ESTADO CONFIRMACION significa que te saltaste slots — vuelve a llenarlos en orden.",
+    "Cuando el usuario diga \"sí\"/\"confirmo\" después del resumen, llama directamente reporte_confirmar_y_crear({conversation_id, user_id}) " +
+    "— NO necesitas slot_llenar(confirmado) antes. Esa tool es autosuficiente.",
   inputSchema: z.object({
     conversation_id: z
       .string()
@@ -363,17 +357,11 @@ export const reporteAnalizarImagen = createTool({
 export const reporteConfirmarYCrear = createTool({
   id: "reporte_confirmar_y_crear",
   description:
-    "Crea el reporte ciudadano en BD luego de la confirmación. " +
-    "PRECONDICIÓN ESTRICTA: el flow debe estar en estado CONFIRMACION y el slot confirmado=true. " +
-    "Si recibes error EL FLUJO NO ESTÁ EN ESTADO CONFIRMACION, significa que faltan slots: " +
-    "vuelve a reporte_slot_llenar y completa categoria, tipo, descripcion, ubicacion, fotos y confirmado " +
-    "en FLUJO OBLIGATORIO (orden: categoria → tipo → descripcion → ubicacion → fotos → confirmado) ANTES de reintentar. " +
-    "Devuelve folio (CUH-YYYYMMDD-NNN) y, si urgente, contactos de emergencia. " +
-    "REGLA: solo invoca esta tool en el TURN POSTERIOR a recibir el sí/confirmo del usuario. " +
-    "Si la estás invocando en el mismo turn donde recolectaste los datos, te SALTASTE la pausa de confirmación " +
-    "— vuelve a redactar el resumen y espera la respuesta del usuario. " +
-    "Si recibes el error con prefijo \"El flujo no está listo para crear\", significa que faltan slots — vuelve a slot_llenar para completarlos. " +
-    "Si ya está en GUARDADO pero esta tool nunca devolvió folio, INVÓCALA igual — esta tool ahora es idempotente respecto a GUARDADO mientras el lead no exista.",
+    "Crea el reporte ciudadano en BD. " +
+    "SEMÁNTICA: invoca esta tool en cuanto el usuario haya dicho \"sí\"/\"confirmo\" después del resumen. " +
+    "NO necesitas llamar slot_llenar(confirmado:true) antes — esta tool es autosuficiente y solo requiere que los slots " +
+    "categoria, tipo, descripcion, ubicacion estén llenos. Si faltan, devolverá un error con instrucción explícita. " +
+    "Devuelve folio (CUH-YYYYMMDD-NNN) y, si urgente, contactos de emergencia.",
   inputSchema: z.object({
     conversation_id: z
       .string()
@@ -410,25 +398,7 @@ export const reporteConfirmarYCrear = createTool({
     }
 
     const flow = flowResult.flow;
-
-    // Aceptar CONFIRMACION o GUARDADO. Si GUARDADO ya existe pero no hay lead en BD,
-    // significa que slot_llenar(confirmado:true) avanzó la state machine pero el agente
-    // no encadenó confirmar_y_crear. Rescatable.
-    if (flow.step !== "CONFIRMACION" && flow.step !== "GUARDADO") {
-      return {
-        ok: false as const,
-        error: `El flujo no está listo para crear (estado actual: ${flow.step}). Faltan slots por llenar.`,
-      };
-    }
-
     const slots = flow.slots;
-
-    if (slots["confirmado"] !== true) {
-      return {
-        ok: false as const,
-        error: "El usuario no ha confirmado el reporte (slot 'confirmado' no es true).",
-      };
-    }
 
     // 2. Extract required fields from slots
     const categoria = typeof slots["categoria"] === "string" ? slots["categoria"] : "";
