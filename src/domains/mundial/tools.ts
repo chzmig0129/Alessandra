@@ -68,8 +68,16 @@ export const mundialPartidosBuscar = createTool({
       .string()
       .optional()
       .describe(
-        "Ciudad donde se juega, exactamente como aparece en la BD. " +
-        "Ej: 'Ciudad de México', 'Guadalajara', 'Monterrey', 'Toronto', 'Vancouver', 'Kansas City', 'Los Angeles'.",
+        "Ciudad donde se juega, exactamente como aparece en la BD. Acepta solo el nombre del MUNICIPIO real, NO el área metropolitana. " +
+        "Ej: 'Ciudad de México', 'Zapopan' (NO Guadalajara — Estadio Akron está en Zapopan), 'Guadalupe' (NO Monterrey — Estadio BBVA está en Guadalupe). " +
+        "Estados Unidos: 'Arlington', 'Atlanta', 'East Rutherford', 'Foxborough', 'Houston', 'Inglewood', 'Kansas City', 'Miami Gardens', 'Philadelphia', 'Santa Clara', 'Seattle'. " +
+        "Canadá: 'Toronto', 'Vancouver'.",
+      ),
+    pais: z
+      .string()
+      .optional()
+      .describe(
+        "País: 'México', 'Estados Unidos', o 'Canadá'. Acepta también 'USA', 'Mexico', 'Canada' — se normalizan.",
       ),
     fase: z
       .string()
@@ -142,6 +150,7 @@ export const mundialPartidosBuscar = createTool({
     fecha,
     equipo,
     ciudad,
+    pais,
     fase,
     grupo,
     estado,
@@ -152,6 +161,7 @@ export const mundialPartidosBuscar = createTool({
     fecha?: string;
     equipo?: string;
     ciudad?: string;
+    pais?: string;
     fase?: string;
     grupo?: string;
     estado?: string;
@@ -163,6 +173,7 @@ export const mundialPartidosBuscar = createTool({
       fecha,
       equipo,
       ciudad,
+      pais,
       fase,
       grupo,
       estado,
@@ -182,6 +193,7 @@ export const mundialPartidosBuscar = createTool({
       const { data: retryData, error: retryError } = await fetchPartidos({
         equipo,
         ciudad,
+        pais,
         fase,
         grupo,
         estado,

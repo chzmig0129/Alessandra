@@ -153,6 +153,8 @@ export interface PartidoFilters {
   equipo?: string;
   /** Venue city (matches sede_ciudad) */
   ciudad?: string;
+  /** Host country: 'México', 'Estados Unidos', 'Canadá' — also accepts 'USA', 'Mexico', 'Canada' (normalised) */
+  pais?: string;
   /** Match phase: 'grupos' | 'dieciseisavos' | 'octavos' | 'cuartos' | 'semifinal' | 'tercer_lugar' | 'final' */
   fase?: string;
   /** Group letter A-L */
@@ -279,6 +281,18 @@ export async function fetchPartidos(
   if (filters.ciudad) {
     // sede_ciudad is the column name in F1's rewritten view (was "ciudad").
     query = query.ilike("sede_ciudad", `%${filters.ciudad}%`);
+  }
+
+  if (filters.pais) {
+    // Normalize common variants before filtering.
+    const normalised = (() => {
+      const p = filters.pais.toLowerCase().trim();
+      if (p === 'usa' || p === 'eeuu' || p === 'us' || p === 'estados unidos') return 'Estados Unidos';
+      if (p === 'mexico' || p === 'méxico' || p === 'mx') return 'México';
+      if (p === 'canada' || p === 'canadá') return 'Canadá';
+      return filters.pais;
+    })();
+    query = query.ilike('sede_pais', `%${normalised}%`);
   }
 
   if (filters.equipo) {
