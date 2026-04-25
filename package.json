@@ -10,7 +10,8 @@
     "test": "vitest run",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "elevenlabs:deploy": "tsx scripts/elevenlabs-deploy-agent.ts"
+    "elevenlabs:deploy": "tsx scripts/elevenlabs-deploy-agent.ts",
+    "voice:finalize": "tsx scripts/elevenlabs-finalize-setup.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^1.0.0",
