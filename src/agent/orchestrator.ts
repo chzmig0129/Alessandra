@@ -76,11 +76,42 @@ import type { AlessandraResponse } from "@/types";
 
 function detectUserLanguage(text: string): "es" | "en" | "pt" | "fr" | "it" {
   const t = text.toLowerCase();
-  // Heurística: portugués primero (overlap con español); luego inglés; luego francés/italiano; default español.
-  if (/(\bquando|onde|qual|jogo|copa do mundo|estádio|por favor|olá|obrigado|você|também|não\b)/.test(t)) return "pt";
-  if (/(\bwhen|where|what|how|the|stadium|world cup|please|hello|thank you|today|tomorrow|do you\b)/.test(t)) return "en";
-  if (/(\bquand|où|comment|stade|coupe du monde|bonjour|merci|aujourd|s.il vous plaît\b)/.test(t)) return "fr";
-  if (/(\bquando|dove|come|stadio|coppa del mondo|per favore|ciao|grazie|oggi|domani\b)/.test(t)) return "it";
+
+  // Markers EXCLUSIVOS por idioma — palabras que NO aparecen como substring de
+  // ninguna palabra común en español. Usamos `\b...\b` correctamente en cada
+  // alternativa (no solo al primer/último token del grupo) para evitar matches
+  // dentro de "donde", "responde", "esconde" → "onde" (PT), o "come" (verbo es)
+  // → "come" (IT), etc.
+  const PT_RE = /\b(não|obrigad[oa]|olá|você|também|jogo|estádio|copa do mundo|portugu[eê]s|brasil|portugal)\b/g;
+  const EN_RE = /\b(hello|hi|please|thank you|stadium|world cup|today|tomorrow|when|where|what|how|the|and|with|from|near|nearest)\b/g;
+  const FR_RE = /\b(bonjour|merci|où|quand|comment|stade|coupe du monde|aujourd|français|france)\b/g;
+  const IT_RE = /\b(ciao|grazie|dove|stadio|coppa del mondo|oggi|domani|italiano|italia)\b/g;
+
+  // Marcadores fuertes — un solo match basta porque son inequívocos.
+  const STRONG_PT = /\b(não|obrigad[oa]|olá|você|também)\b/;
+  const STRONG_FR = /\b(bonjour|merci|aujourd|où)\b/;
+  const STRONG_IT = /\b(ciao|grazie)\b/;
+
+  if (STRONG_PT.test(t)) return "pt";
+  if (STRONG_FR.test(t)) return "fr";
+  if (STRONG_IT.test(t)) return "it";
+
+  // Conteo de matches — necesitamos 2+ de las regex menos exclusivas para
+  // declarar un idioma no-español. Mensajes cortos en español típicos no
+  // disparan ningún match y caen al default 'es'.
+  const ptCount = (t.match(PT_RE) ?? []).length;
+  const enCount = (t.match(EN_RE) ?? []).length;
+  const frCount = (t.match(FR_RE) ?? []).length;
+  const itCount = (t.match(IT_RE) ?? []).length;
+
+  const max = Math.max(ptCount, enCount, frCount, itCount);
+  if (max < 2) return "es";
+
+  if (ptCount === max) return "pt";
+  if (enCount === max) return "en";
+  if (frCount === max) return "fr";
+  if (itCount === max) return "it";
+
   return "es";
 }
 
