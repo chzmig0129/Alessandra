@@ -144,6 +144,12 @@ export async function isValidTipo(
   return tiposForCat.has(tipo);
 }
 
+export async function getTiposForCategoria(categoria: string): Promise<string[]> {
+  const { tipos } = await loadReportTaxonomy();
+  const map = tipos.get(categoria);
+  return map ? Array.from(map.keys()) : [];
+}
+
 export async function getRoutingArea(
   categoria: string,
   tipo: string,

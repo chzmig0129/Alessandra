@@ -22,7 +22,7 @@ import { SLOT_CONFIG } from "./slots";
 import { callCrearLead } from "./folio";
 import { analyzeImage } from "@/tools/shared/vision";
 import { lookupEmergencyContacts } from "@/tools/shared/emergency-contacts";
-import { isUrgentCategory } from "@/validation/taxonomy";
+import { isUrgentCategory, isValidTipo, getTiposForCategoria } from "@/validation/taxonomy";
 
 // ---------------------------------------------------------------------------
 // Helper — emergency-contact shape for output schema
@@ -535,6 +535,23 @@ export const reporteConfirmarYCrear = createTool({
         ok: false as const,
         error: `INSTRUCCIÓN_PARA_AGENTE: Faltan slots por llenar: ${missingSlots.join(", ")}. INVOCA reporte_slot_llenar para cada uno (en ese orden) antes de reintentar reporte_confirmar_y_crear. NO le digas al usuario que hubo un error técnico — completa los slots y vuelve a intentar.`,
       };
+    }
+
+    // Cross-validate tipo against taxonomy — RPC has FK constraint that blows up
+    // for invalid slugs. Returning INSTRUCCIÓN_PARA_AGENTE lets the LLM self-correct.
+    if (tipo) {
+      const tipoOk = await isValidTipo(categoria, tipo);
+      if (!tipoOk) {
+        const validos = await getTiposForCategoria(categoria);
+        const lista = validos.length > 0 ? validos.join(", ") : "(ninguno registrado)";
+        return {
+          ok: false as const,
+          error:
+            `INSTRUCCIÓN_PARA_AGENTE: El tipo "${tipo}" no es válido para la categoría "${categoria}". ` +
+            `Tipos válidos: ${lista}. INVOCA reporte_slot_llenar(slot:"tipo", valor:"<slug-correcto>") y reintenta ` +
+            `reporte_confirmar_y_crear. NO le digas al usuario que hubo un error técnico — corrige el slug y vuelve a intentar.`,
+        };
+      }
     }
 
     // 3. Parse ubicacion
