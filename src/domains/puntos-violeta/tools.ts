@@ -124,6 +124,14 @@ export const puntosVioletaBuscar = createTool({
       return { ok: false as const, error };
     }
 
+    // Convierte slugs lowercase/snake_case a Title Case legible para el usuario.
+    // "punto_violeta" → "Punto violeta", "comercio" → "Comercio".
+    const prettify = (s: string | null): string | null => {
+      if (!s) return s;
+      const spaced = s.replace(/_/g, " ");
+      return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+    };
+
     const rows = data.map((row) => ({
       id: row.id,
       nombre: row.nombre,
@@ -133,7 +141,7 @@ export const puntosVioletaBuscar = createTool({
       lng: row.lng,
       telefono: row.telefono,
       horario: row.horario,
-      tipo_atencion: row.tipo_atencion,
+      tipo_atencion: prettify(row.tipo_atencion),
       atencion_24_7: row.atencion_24_7,
       distance_km: row.distance_km,
       maps_url: row.maps_url,
@@ -187,6 +195,12 @@ export const puntosVioletaDetalle = createTool({
     if (error) return { ok: false as const, error };
     if (!data) return { ok: false as const, error: `Punto Violeta con ID ${id} no encontrado` };
 
+    const prettify = (s: string | null): string | null => {
+      if (!s) return s;
+      const spaced = s.replace(/_/g, " ");
+      return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+    };
+
     return {
       ok: true as const,
       data: {
@@ -201,7 +215,7 @@ export const puntosVioletaDetalle = createTool({
         lng: data.lng,
         telefono: data.telefono,
         horario: data.horario,
-        tipo_atencion: data.tipo_atencion,
+        tipo_atencion: prettify(data.tipo_atencion),
         atencion_24_7: data.atencion_24_7,
       },
     };
