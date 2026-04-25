@@ -77,6 +77,10 @@ const OutputSchema = z.discriminatedUnion("ok", [
         subcategory: z.string().nullable(),
         title: z.string().nullable(),
         summary: z.string().nullable(),
+        // Snippet del content jsonb truncado a ~1200 chars para que el LLM
+        // tenga acceso a datos concretos (teléfonos, direcciones, requisitos)
+        // que no caben en el summary.
+        content_snippet: z.string().nullable(),
         tags: z.array(z.string()).nullable(),
         similarity: z.number(),
       }),
@@ -118,10 +122,12 @@ export const knowledgeBuscar = createTool({
         value: query,
       });
 
-      // 2. Llamar al RPC match_knowledge
+      // 2. Llamar al RPC match_knowledge — threshold bajo para no perder
+      //    datos concretos (teléfonos, direcciones) que pueden tener embedding
+      //    distinto al summary aunque sean del mismo doc.
       const { data, error } = await supabaseAdmin.rpc("match_knowledge", {
         query_embedding: embedding,
-        match_threshold: 0.3,
+        match_threshold: 0.2,
         match_count: limit ?? 5,
         filter_category: category ?? null,
       });
@@ -136,9 +142,20 @@ export const knowledgeBuscar = createTool({
         subcategory: string | null;
         title: string | null;
         summary: string | null;
+        content: unknown;
         tags: string[] | null;
         similarity: number;
       }>;
+
+      // Extrae texto leíble desde content jsonb. La mayoría son strings; algunos
+      // son objetos con claves arbitrarias — para esos serializamos a JSON
+      // (truncado) para que el LLM al menos tenga el blob inspeccionable.
+      const snippetOf = (c: unknown): string | null => {
+        if (c == null) return null;
+        const raw = typeof c === "string" ? c : JSON.stringify(c);
+        const trimmed = raw.replace(/\s+/g, " ").trim();
+        return trimmed.length > 1200 ? trimmed.slice(0, 1200) + "…" : trimmed;
+      };
 
       const results = rows.map((r) => ({
         id: r.id,
@@ -146,6 +163,7 @@ export const knowledgeBuscar = createTool({
         subcategory: r.subcategory,
         title: r.title,
         summary: r.summary,
+        content_snippet: snippetOf(r.content),
         tags: r.tags,
         similarity: Math.round(r.similarity * 1000) / 1000,
       }));
