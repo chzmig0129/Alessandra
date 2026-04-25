@@ -114,18 +114,20 @@ export async function lookupEmergencyContacts(
   }
 
   // Map raw rows to EmergencyContact, populating real cols and deprecated aliases.
+  const { prettifyEmergencyCategory } = await import("@/lib/display");
   const contacts: EmergencyContact[] = ((data ?? []) as RawRow[]).map((row) => ({
     id: row.id,
     name: row.name,
     number: row.number,
-    category: row.category,
+    // Display-friendly label so the LLM doesn't echo "cruz_roja" verbatim.
+    category: prettifyEmergencyCategory(row.category) ?? row.category,
     description: row.description,
     available_24_7: row.available_24_7,
     whatsapp: row.whatsapp,
     // Deprecated backward-compat aliases
     nombre: row.name,
     telefono: row.number,
-    categoria: row.category,
+    categoria: prettifyEmergencyCategory(row.category) ?? row.category,
     descripcion: row.description,
     activo: true, // always true — we filter active=true in query
   }));

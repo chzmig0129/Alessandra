@@ -807,6 +807,10 @@ const LeadSchema = z.object({
   created_at: z.string(),
   location_address: z.string().nullable(),
   report: z.string(),
+  // Display-friendly labels — use these when narrating to the user.
+  category_display: z.string().optional(),
+  report_type_display: z.string().nullable().optional(),
+  status_display: z.string().optional(),
 });
 
 // ---------------------------------------------------------------------------
@@ -880,7 +884,16 @@ export const reporteConsultar = createTool({
       };
     }
 
-    return { ok: true as const, lead: parsed.data };
+    const { prettifyReportCategory, prettifyReportType, prettifyLeadStatus } =
+      await import("@/lib/display");
+    const enriched = {
+      ...parsed.data,
+      category_display: prettifyReportCategory(parsed.data.category) ?? parsed.data.category,
+      report_type_display: prettifyReportType(parsed.data.report_type),
+      status_display: prettifyLeadStatus(parsed.data.status) ?? parsed.data.status,
+    };
+
+    return { ok: true as const, lead: enriched };
   },
 });
 
@@ -954,6 +967,15 @@ export const reporteListarMios = createTool({
       };
     }
 
-    return { ok: true as const, data: leads };
+    const { prettifyReportCategory, prettifyReportType, prettifyLeadStatus } =
+      await import("@/lib/display");
+    const enrichedLeads = leads.map((lead) => ({
+      ...lead,
+      category_display: prettifyReportCategory(lead.category) ?? lead.category,
+      report_type_display: prettifyReportType(lead.report_type),
+      status_display: prettifyLeadStatus(lead.status) ?? lead.status,
+    }));
+
+    return { ok: true as const, data: enrichedLeads };
   },
 });
