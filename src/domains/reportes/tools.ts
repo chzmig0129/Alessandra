@@ -23,6 +23,7 @@ import { callCrearLead } from "./folio";
 import { analyzeImage } from "@/tools/shared/vision";
 import { lookupEmergencyContacts } from "@/tools/shared/emergency-contacts";
 import { isUrgentCategory, isValidTipo, getTiposForCategoria } from "@/validation/taxonomy";
+import { getTurnContext } from "@/lib/turn-context";
 
 // ---------------------------------------------------------------------------
 // Helper — emergency-contact shape for output schema
@@ -45,12 +46,21 @@ function resolveCanonicalIds(
   input: { conversation_id?: string; user_id?: string },
   ctx?: { requestContext?: import("@mastra/core/request-context").RequestContext },
 ): { conversation_id: string | undefined; user_id: string | undefined } {
-  const canonicalConv = ctx?.requestContext?.has("conversation_id")
+  // Priority 1: AsyncLocalStorage turn context (bulletproof, framework-agnostic)
+  const turnCtx = getTurnContext();
+  const alsConvId = turnCtx?.conversationId;
+  const alsUserId = turnCtx?.userId;
+
+  // Priority 2: Mastra RequestContext (belt-and-suspenders fallback)
+  const rcConvId = ctx?.requestContext?.has("conversation_id")
     ? (ctx.requestContext.get("conversation_id") as string)
     : undefined;
-  const canonicalUser = ctx?.requestContext?.has("user_id")
+  const rcUserId = ctx?.requestContext?.has("user_id")
     ? (ctx.requestContext.get("user_id") as string)
     : undefined;
+
+  const canonicalConv = alsConvId ?? rcConvId;
+  const canonicalUser = alsUserId ?? rcUserId;
 
   if (canonicalConv && input.conversation_id && input.conversation_id !== canonicalConv) {
     console.warn(
@@ -77,20 +87,27 @@ function resolveAttachments(
   input: { image_url?: string; lat?: number; lng?: number },
   ctx?: { requestContext?: import("@mastra/core/request-context").RequestContext },
 ): { image_url: string | undefined; lat: number | undefined; lng: number | undefined } {
-  const canonicalImageUrl = ctx?.requestContext?.has("image_url")
+  // Priority 1: AsyncLocalStorage turn context
+  const turnCtx = getTurnContext();
+  const alsImageUrl = turnCtx?.attachments?.imageUrl;
+  const alsLat = turnCtx?.attachments?.lat;
+  const alsLng = turnCtx?.attachments?.lng;
+
+  // Priority 2: Mastra RequestContext (fallback)
+  const rcImageUrl = ctx?.requestContext?.has("image_url")
     ? (ctx.requestContext.get("image_url") as string)
     : undefined;
-  const canonicalLat = ctx?.requestContext?.has("lat")
+  const rcLat = ctx?.requestContext?.has("lat")
     ? (ctx.requestContext.get("lat") as number)
     : undefined;
-  const canonicalLng = ctx?.requestContext?.has("lng")
+  const rcLng = ctx?.requestContext?.has("lng")
     ? (ctx.requestContext.get("lng") as number)
     : undefined;
 
   return {
-    image_url: canonicalImageUrl ?? input.image_url,
-    lat: canonicalLat ?? input.lat,
-    lng: canonicalLng ?? input.lng,
+    image_url: alsImageUrl ?? rcImageUrl ?? input.image_url,
+    lat: alsLat ?? rcLat ?? input.lat,
+    lng: alsLng ?? rcLng ?? input.lng,
   };
 }
 
@@ -308,12 +325,15 @@ export const reporteSlotLlenar = createTool({
       }
     }
 
-    // Override fotos/ubicacion from canonical RequestContext attachments — the LLM cannot
+    // Override fotos/ubicacion from canonical attachments — the LLM cannot
     // overwrite an actual uploaded image with "sin_foto" or an empty value.
+    // Priority: AsyncLocalStorage (turn context) > Mastra RequestContext
     if (slot === "fotos") {
-      const canonicalImageUrl = ctx?.requestContext?.has("image_url")
+      const alsImageUrl = getTurnContext()?.attachments?.imageUrl;
+      const rcImageUrl = ctx?.requestContext?.has("image_url")
         ? (ctx.requestContext.get("image_url") as string)
         : undefined;
+      const canonicalImageUrl = alsImageUrl ?? rcImageUrl;
       if (canonicalImageUrl) {
         if (decodedValor !== canonicalImageUrl && JSON.stringify(decodedValor) !== JSON.stringify([canonicalImageUrl])) {
           console.warn(
@@ -327,12 +347,16 @@ export const reporteSlotLlenar = createTool({
         decodedValor = [canonicalImageUrl];
       }
     } else if (slot === "ubicacion") {
-      const canonicalLat = ctx?.requestContext?.has("lat")
+      const alsLat = getTurnContext()?.attachments?.lat;
+      const alsLng = getTurnContext()?.attachments?.lng;
+      const rcLat = ctx?.requestContext?.has("lat")
         ? (ctx.requestContext.get("lat") as number)
         : undefined;
-      const canonicalLng = ctx?.requestContext?.has("lng")
+      const rcLng = ctx?.requestContext?.has("lng")
         ? (ctx.requestContext.get("lng") as number)
         : undefined;
+      const canonicalLat = alsLat ?? rcLat;
+      const canonicalLng = alsLng ?? rcLng;
       if (canonicalLat !== undefined && canonicalLng !== undefined) {
         if (JSON.stringify(decodedValor) !== JSON.stringify({ lat: canonicalLat, lng: canonicalLng })) {
           console.warn(
@@ -538,21 +562,42 @@ export const reporteConfirmarYCrear = createTool({
     }
 
     // Cross-validate tipo against taxonomy — RPC has FK constraint that blows up
-    // for invalid slugs. Returning INSTRUCCIÓN_PARA_AGENTE lets the LLM self-correct.
+    // for invalid slugs.
+    // Auto-correction: if tipo is invalid but the category has EXACTLY ONE valid tipo,
+    // silently correct it and continue (no round-trip to LLM).
     if (tipo) {
       const tipoOk = await isValidTipo(categoria, tipo);
       if (!tipoOk) {
         const validos = await getTiposForCategoria(categoria);
-        const lista = validos.length > 0 ? validos.join(", ") : "(ninguno registrado)";
-        return {
-          ok: false as const,
-          error:
-            `INSTRUCCIÓN_PARA_AGENTE: El tipo "${tipo}" no es válido para la categoría "${categoria}". ` +
-            `Tipos válidos: ${lista}. INVOCA reporte_slot_llenar(slot:"tipo", valor:"<slug-correcto>") y reintenta ` +
-            `reporte_confirmar_y_crear. NO le digas al usuario que hubo un error técnico — corrige el slug y vuelve a intentar.`,
-        };
+        if (validos.length === 1) {
+          // AUTO_CORRECCION: exactly one valid tipo — fix silently and continue.
+          const correctedTipo = validos[0]!;
+          console.info(
+            `[reportes] auto-corrected tipo from "${tipo}" to "${correctedTipo}" for categoria="${categoria}"`,
+          );
+          // Persist corrected tipo back to flow state.
+          const correctedSlots = { ...slots, tipo: correctedTipo };
+          await setFlowState(resolvedConvId, { ...flow, slots: correctedSlots });
+          // Use corrected value for rest of this execution.
+          // (Re-assign via mutable local — we'll reference correctedTipo below.)
+          slots["tipo"] = correctedTipo;
+        } else {
+          // 0 or 2+ valid tipos — let the LLM correct with explicit instruction.
+          const lista = validos.length > 0 ? validos.join(", ") : "(ninguno registrado)";
+          return {
+            ok: false as const,
+            error:
+              `INSTRUCCIÓN_PARA_AGENTE: El tipo "${tipo}" no es válido para la categoría "${categoria}". ` +
+              `Tipos válidos: ${lista}. INVOCA reporte_slot_llenar(slot:"tipo", valor:"<slug-correcto>") y ` +
+              `INMEDIATAMENTE en este MISMO turn DEBES invocar reporte_confirmar_y_crear DESPUÉS de corregir el slot. ` +
+              `NO muestres un nuevo resumen al usuario. NO pidas confirmación otra vez. El usuario YA confirmó.`,
+          };
+        }
       }
     }
+
+    // Re-read tipo from slots in case auto-correction updated it.
+    const efectiveTipo = typeof slots["tipo"] === "string" ? slots["tipo"] : tipo;
 
     // 3. Parse ubicacion
     let lat: number | null = null;
@@ -584,7 +629,7 @@ export const reporteConfirmarYCrear = createTool({
     // "sin_foto" scalar is simply ignored (empty array)
 
     // 5. Determine priority and routing area
-    const urgent = isUrgentCategory(categoria, tipo);
+    const urgent = isUrgentCategory(categoria, efectiveTipo);
     const priority = urgent ? 0 : 2;
 
     // 6. Call RPC
@@ -592,7 +637,7 @@ export const reporteConfirmarYCrear = createTool({
       conversation_id: resolvedConvId,
       user_id: resolvedUserId,
       category: categoria,
-      report_type: tipo || null,
+      report_type: efectiveTipo || null,
       report: descripcion,
       lat,
       lng,

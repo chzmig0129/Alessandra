@@ -18,6 +18,8 @@
 
 import { Agent } from "@mastra/core/agent";
 import { RequestContext } from "@mastra/core/request-context";
+import { runWithTurnContext } from "@/lib/turn-context";
+import type { TurnContext } from "@/lib/turn-context";
 
 import { classifyDomain } from "./router";
 import { SYSTEM_PROMPT_BASE } from "./prompts/system";
@@ -375,16 +377,26 @@ export async function processTurn(
     requestContext.set("lng", input.attachments.lng);
   }
 
+  // Build AsyncLocalStorage turn context — bulletproof fallback for tools that
+  // cannot reliably read Mastra's requestContext in generateLegacy + maxSteps flows.
+  const turnCtx: TurnContext = {
+    conversationId,
+    userId: input.userId,
+    attachments: input.attachments,
+  };
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let agentResult: any;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    agentResult = await alessandraAgent.generateLegacy(messagesForAgent as any, {
-      instructions: fullSystemPrompt,
-      maxSteps: 15,
-      temperature,
-      requestContext,
-    });
+    agentResult = await runWithTurnContext(turnCtx, () =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      alessandraAgent.generateLegacy(messagesForAgent as any, {
+        instructions: fullSystemPrompt,
+        maxSteps: 15,
+        temperature,
+        requestContext,
+      }),
+    );
   } catch (err) {
     console.error("[orchestrator] agent.generate failed:", err);
     return { text: "Tuve un problema técnico, intenta de nuevo." };
@@ -470,19 +482,21 @@ export async function processTurn(
     // One retry with a stricter prompt
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const retryResult: any = await alessandraAgent.generateLegacy(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        [
-          ...messagesForAgent,
-          { role: "assistant" as const, content: rawText },
-          { role: "user" as const, content: CITATION_RETRY_SUFFIX },
-        ] as any,
-        {
-          instructions: fullSystemPrompt,
-          maxSteps: 1,
-          temperature,
-          requestContext,
-        },
+      const retryResult: any = await runWithTurnContext(turnCtx, () =>
+        alessandraAgent.generateLegacy(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          [
+            ...messagesForAgent,
+            { role: "assistant" as const, content: rawText },
+            { role: "user" as const, content: CITATION_RETRY_SUFFIX },
+          ] as any,
+          {
+            instructions: fullSystemPrompt,
+            maxSteps: 1,
+            temperature,
+            requestContext,
+          },
+        ),
       );
 
       const retryText: string =
