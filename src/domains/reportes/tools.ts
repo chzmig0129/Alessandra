@@ -20,6 +20,7 @@ import { transitions, nextRequiredSlot } from "./state-machine";
 import type { ReporteState } from "./state-machine";
 import { SLOT_CONFIG } from "./slots";
 import { callCrearLead } from "./folio";
+import { analyzeReportContent } from "./ai-analysis";
 import { analyzeImage } from "@/tools/shared/vision";
 import { lookupEmergencyContacts } from "@/tools/shared/emergency-contacts";
 import { isUrgentCategory, isValidTipo, getTiposForCategoria, suggestTipoFromKeyword } from "@/validation/taxonomy";
@@ -690,7 +691,19 @@ export const reporteConfirmarYCrear = createTool({
     const urgent = isUrgentCategory(categoria, efectiveTipo);
     const priority = urgent ? 0 : 2;
 
-    // 6. Call RPC
+    // 6. AI analysis (best-effort — never blocks lead creation)
+    const ai = await analyzeReportContent({
+      descripcion,
+      categoria,
+      report_type: efectiveTipo || null,
+      media_urls: mediaUrls,
+      location_label: locationAddress,
+    }).catch((err) => {
+      console.warn("[reportes] analyzeReportContent failed:", err);
+      return null;
+    });
+
+    // 7. Call RPC
     const rpcResult = await callCrearLead({
       conversation_id: resolvedConvId,
       user_id: resolvedUserId,
@@ -702,16 +715,19 @@ export const reporteConfirmarYCrear = createTool({
       location_address: locationAddress,
       media_urls: mediaUrls,
       priority,
+      severity: ai?.severity,
+      tags: ai?.tags,
+      ai_analysis: ai ?? undefined,
     });
 
     if (!rpcResult.ok) {
       return { ok: false as const, error: rpcResult.error };
     }
 
-    // 7. Clear flow on success
+    // 8. Clear flow on success
     await clearFlowState(resolvedConvId);
 
-    // 8. Attach emergency contacts if urgent
+    // 9. Attach emergency contacts if urgent
     if (urgent) {
       const contacts = await lookupEmergencyContacts("urgente");
       return {
