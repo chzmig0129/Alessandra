@@ -20,6 +20,7 @@ import { Agent } from "@mastra/core/agent";
 import { RequestContext } from "@mastra/core/request-context";
 import { runWithTurnContext } from "@/lib/turn-context";
 import type { TurnContext } from "@/lib/turn-context";
+import { supabaseAdmin } from "@/db/supabase-server";
 
 import { classifyDomain } from "./router";
 import { SYSTEM_PROMPT_BASE } from "./prompts/system";
@@ -462,6 +463,40 @@ export async function processTurn(
       : Array.isArray(agentResult.toolResults)
         ? agentResult.toolResults
         : [];
+
+  // Salvaguarda determinística: si attachments.imageUrl está seteado y un lead se
+  // creó exitosamente en este turn pero su media_urls quedó vacío (porque el LLM
+  // pasó 'sin_foto' y el override en slot_llenar no se propagó), patchearlo en BD
+  // directamente. Idempotente — si ya tiene media_urls, no hace nada.
+  if (input.attachments?.imageUrl) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const successfulCreate = toolResults.find((tr: any) =>
+      tr?.toolName === "reporte_confirmar_y_crear" &&
+      tr?.result?.ok === true &&
+      typeof tr?.result?.lead_id === "string",
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ) as any;
+    const leadId: string | undefined = successfulCreate?.result?.lead_id;
+    if (leadId) {
+      try {
+        const { data: leadRow } = await supabaseAdmin
+          .from("leads")
+          .select("media_urls")
+          .eq("id", leadId)
+          .single();
+        const currentUrls = (leadRow?.media_urls as string[] | null) ?? [];
+        if (currentUrls.length === 0) {
+          await supabaseAdmin
+            .from("leads")
+            .update({ media_urls: [input.attachments.imageUrl] })
+            .eq("id", leadId);
+          console.info("[orchestrator] post-create media_urls patch applied lead_id=" + leadId);
+        }
+      } catch (err) {
+        console.warn("[orchestrator] post-create media_urls patch failed:", err);
+      }
+    }
+  }
 
   let finalText = rawText;
 
