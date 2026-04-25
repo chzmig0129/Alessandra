@@ -46,8 +46,11 @@ export const reporteIniciar = createTool({
   description:
     "Inicia el flujo de un nuevo reporte ciudadano. " +
     "INVOCA esta tool en cuanto el usuario exprese intención de reportar " +
-    "(\"quiero reportar\", \"hay un bache\", \"reportar fuga\", \"se cayó un árbol\", etc.) " +
-    "— NO pidas datos adicionales antes; la tool inicia el flujo y luego pides los slots con reporte_slot_llenar.",
+    "(\"quiero reportar\", \"hay un bache\", \"reportar fuga\", \"se cayó un árbol\"). " +
+    "DESPUÉS de invocar esta tool, DEBES llenar todos los slots con reporte_slot_llenar en ORDEN: " +
+    "categoria → tipo → descripcion → ubicacion → fotos → confirmado. " +
+    "NO llames reporte_confirmar_y_crear sin haber pasado todos los slots primero. " +
+    "FLUJO OBLIGATORIO: los 6 slots deben llenarse en ese orden antes de confirmar.",
   inputSchema: z.object({
     conversation_id: z
       .string()
@@ -106,9 +109,33 @@ export const reporteIniciar = createTool({
 export const reporteSlotLlenar = createTool({
   id: "reporte_slot_llenar",
   description:
-    "Registra el valor de un slot del reporte activo y avanza el estado si corresponde. " +
-    "Úsala cada vez que el usuario provee un dato del reporte (categoría, descripción, ubicación, foto, confirmación, etc.). " +
-    "Ejemplo de secuencia: slot='categoria' valor='baches' → slot='tipo' valor='bache en calzada' → slot='descripcion' valor='Bache de ~1m en Av. Insurgentes'.",
+    "Llena un slot del flujo activo de reporte. " +
+    "FLUJO OBLIGATORIO: invoca esta tool una vez por cada slot en ORDEN: " +
+    "categoria → tipo → descripcion → ubicacion → fotos → confirmado. " +
+    "NO te saltes ningún paso. Si el flow ya tiene categoria_hint, IGUAL debes llamar " +
+    "slot_llenar({slot:categoria, valor: <slug oficial>}) — el hint NO sustituye al slot.\n\n" +
+    "CATEGORÍAS OFICIALES (slugs válidos para slot=categoria):\n" +
+    "- alumbrado: focos, luminarias, iluminación pública\n" +
+    "- animales: maltrato, extraviados, vacunación, esterilización\n" +
+    "- arbolado: poda, derribo, retiro de tocón\n" +
+    "- cultura, emergencias, hospedaje, monumentos, otro, parques, recomendaciones, recreativo, restaurantes, salud, transporte\n" +
+    "- infraestructura: BACHES, fugas de agua, banquetas, calles\n" +
+    "- limpia: basura, recolección\n\n" +
+    "MAPEO COMÚN (texto del usuario → slug):\n" +
+    "bache → categoria=infraestructura, tipo=infraestructura_bache\n" +
+    "foco fundido / luminaria → categoria=alumbrado, tipo=alumbrado_luminaria\n" +
+    "basura → categoria=limpia\n" +
+    "fuga de agua → categoria=infraestructura\n" +
+    "árbol caído / poda → categoria=arbolado\n" +
+    "maltrato animal → categoria=animales\n\n" +
+    "FORMATO DEL VALOR según slot:\n" +
+    "- categoria, tipo, descripcion: string plano (ej: \"infraestructura\")\n" +
+    "- ubicacion: JSON string. Si tienes coords del CONTEXT lat/lng, usa {\"lat\":19.44,\"lng\":-99.15}. Si dirección libre: {\"direccion_libre\":\"Av Reforma 100\",\"colonia\":\"Juárez\"}\n" +
+    "- fotos: JSON string. Array de URLs [\"https://...\"] o el literal \"sin_foto\" si el usuario no envió imagen\n" +
+    "- confirmado: el literal string \"true\" SOLO después de mostrar el resumen al usuario Y recibir \"sí\"/\"confirmo\" explícito\n\n" +
+    "REGLAS DURAS:\n" +
+    "- NUNCA llames reporte_confirmar_y_crear sin haber llenado confirmado:true primero.\n" +
+    "- El error EL FLUJO NO ESTÁ EN ESTADO CONFIRMACION significa que te saltaste slots — vuelve a llenarlos en orden.",
   inputSchema: z.object({
     conversation_id: z
       .string()
@@ -284,10 +311,12 @@ export const reporteAnalizarImagen = createTool({
 export const reporteConfirmarYCrear = createTool({
   id: "reporte_confirmar_y_crear",
   description:
-    "Crea el reporte ciudadano en base de datos luego de la confirmación del usuario. " +
-    "Requiere que el flujo esté en estado CONFIRMACION y que el slot 'confirmado' sea true. " +
-    "Devuelve el folio asignado (ej: CUH-20260424-007) y, si el problema es urgente, incluye contactos de emergencia. " +
-    "Solo invoca esta tool DESPUÉS de que el usuario haya dicho explícitamente que sí confirma.",
+    "Crea el reporte ciudadano en BD luego de la confirmación. " +
+    "PRECONDICIÓN ESTRICTA: el flow debe estar en estado CONFIRMACION y el slot confirmado=true. " +
+    "Si recibes error EL FLUJO NO ESTÁ EN ESTADO CONFIRMACION, significa que faltan slots: " +
+    "vuelve a reporte_slot_llenar y completa categoria, tipo, descripcion, ubicacion, fotos y confirmado " +
+    "en FLUJO OBLIGATORIO (orden: categoria → tipo → descripcion → ubicacion → fotos → confirmado) ANTES de reintentar. " +
+    "Devuelve folio (CUH-YYYYMMDD-NNN) y, si urgente, contactos de emergencia.",
   inputSchema: z.object({
     conversation_id: z
       .string()

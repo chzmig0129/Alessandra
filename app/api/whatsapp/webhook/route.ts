@@ -13,14 +13,77 @@
  * Spec: AGENTE_ALESSANDRA-a4r
  */
 
+import { randomUUID } from "crypto";
 import Twilio from "twilio";
 import { env } from "@/env";
 import { getOrCreateUser, getOrCreateActiveSession } from "@/memory/session";
 import { processTurn } from "@/agent/orchestrator";
 import { mdToWhatsApp } from "@/lib/whatsapp-format";
 import { sendWhatsAppMessages } from "@/lib/whatsapp-client";
+import { supabaseAdmin } from "@/db/supabase-server";
 
 export const runtime = "nodejs";
+
+// ---------------------------------------------------------------------------
+// Media upload helpers
+// ---------------------------------------------------------------------------
+
+const STORAGE_BUCKET = process.env.STORAGE_BUCKET ?? "citizen-report-media";
+const TWILIO_MEDIA_MIME_EXT: Readonly<Record<string, string>> = {
+  "image/jpeg": "jpg",
+  "image/jpg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "image/heic": "heic",
+  "image/heif": "heif",
+};
+
+async function uploadTwilioMediaToBucket(
+  mediaUrl: string,
+  mimeType: string,
+  userId: string,
+): Promise<string | null> {
+  const accountSid = env.TWILIO_ACCOUNT_SID;
+  const authToken = env.TWILIO_AUTH_TOKEN;
+  if (!accountSid || !authToken) {
+    console.warn("[whatsapp/webhook] No Twilio credentials — skipping media download.");
+    return null;
+  }
+  const ext = TWILIO_MEDIA_MIME_EXT[mimeType.toLowerCase()];
+  if (!ext) {
+    console.warn(`[whatsapp/webhook] Unsupported media MIME: ${mimeType}`);
+    return null;
+  }
+  try {
+    const auth = Buffer.from(`${accountSid}:${authToken}`).toString("base64");
+    const res = await fetch(mediaUrl, { headers: { Authorization: `Basic ${auth}` } });
+    if (!res.ok) {
+      console.error(`[whatsapp/webhook] Twilio media fetch failed: ${res.status}`);
+      return null;
+    }
+    const buf = Buffer.from(await res.arrayBuffer());
+    const path = `whatsapp/${userId}/${randomUUID()}.${ext}`;
+    const { error: upErr } = await supabaseAdmin.storage
+      .from(STORAGE_BUCKET)
+      .upload(path, buf, { contentType: mimeType, upsert: false });
+    if (upErr) {
+      console.error(`[whatsapp/webhook] Storage upload failed: ${upErr.message}`);
+      return null;
+    }
+    const { data: signed, error: signErr } = await supabaseAdmin.storage
+      .from(STORAGE_BUCKET)
+      .createSignedUrl(path, 3600);
+    if (signErr || !signed?.signedUrl) {
+      console.error(`[whatsapp/webhook] Signed URL failed: ${signErr?.message ?? "no url"}`);
+      return null;
+    }
+    console.info(`[whatsapp/webhook] Media uploaded path=${path}`);
+    return signed.signedUrl;
+  } catch (err) {
+    console.error("[whatsapp/webhook] uploadTwilioMediaToBucket error:", err);
+    return null;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -285,9 +348,6 @@ export async function POST(req: Request): Promise<Response> {
   // Check if user is blocked — need to query the full row for the blocked flag
   // getOrCreateUser doesn't return blocked, so we need to check it separately
   // by querying supabaseAdmin directly.
-  // Import supabaseAdmin for this specific check:
-  const { supabaseAdmin } = await import("@/db/supabase-server");
-
   const { data: userRow, error: userFetchError } = await supabaseAdmin
     .from("users")
     .select("blocked")
@@ -344,6 +404,13 @@ export async function POST(req: Request): Promise<Response> {
   if (hasLocation) {
     attachments.lat = Number(latitude);
     attachments.lng = Number(longitude);
+  }
+
+  if (numMedia > 0 && mediaUrl0 && mediaContentType0 && mediaContentType0.startsWith("image/")) {
+    const uploaded = await uploadTwilioMediaToBucket(mediaUrl0, mediaContentType0, user.id);
+    if (uploaded) {
+      attachments.imageUrl = uploaded;
+    }
   }
 
   // ---- 8. Fire background task + ACK immediately ----------------------------

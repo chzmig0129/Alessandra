@@ -289,6 +289,9 @@ export async function processTurn(
     (input.attachments?.lat !== undefined
       ? `, lat=${input.attachments.lat}, lng=${input.attachments.lng}`
       : "") +
+    (input.attachments?.imageUrl
+      ? `, image_url=${input.attachments.imageUrl}`
+      : "") +
     "]";
 
   const fullSystemPrompt = systemPrompt + contextLine;
