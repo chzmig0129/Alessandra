@@ -70,6 +70,31 @@ function resolveCanonicalIds(
 }
 
 // ---------------------------------------------------------------------------
+// Helper — resolve canonical attachments from RequestContext
+// ---------------------------------------------------------------------------
+
+function resolveAttachments(
+  input: { image_url?: string; lat?: number; lng?: number },
+  ctx?: { requestContext?: import("@mastra/core/request-context").RequestContext },
+): { image_url: string | undefined; lat: number | undefined; lng: number | undefined } {
+  const canonicalImageUrl = ctx?.requestContext?.has("image_url")
+    ? (ctx.requestContext.get("image_url") as string)
+    : undefined;
+  const canonicalLat = ctx?.requestContext?.has("lat")
+    ? (ctx.requestContext.get("lat") as number)
+    : undefined;
+  const canonicalLng = ctx?.requestContext?.has("lng")
+    ? (ctx.requestContext.get("lng") as number)
+    : undefined;
+
+  return {
+    image_url: canonicalImageUrl ?? input.image_url,
+    lat: canonicalLat ?? input.lat,
+    lng: canonicalLng ?? input.lng,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // 1. reporte_iniciar
 // ---------------------------------------------------------------------------
 
@@ -137,18 +162,24 @@ export const reporteIniciar = createTool({
     const { conversation_id: canonicalConvId } = resolveCanonicalIds({ conversation_id }, ctx);
     const resolvedConvId = canonicalConvId ?? conversation_id;
 
+    // Resolve canonical attachment values from RequestContext (override LLM-passed args).
+    const canonical = resolveAttachments({ image_url, lat, lng }, ctx);
+    const effectiveImageUrl = canonical.image_url;
+    const effectiveLat = canonical.lat;
+    const effectiveLng = canonical.lng;
+
     const now = new Date();
     const initialSlots: Record<string, unknown> = {};
     if (categoria_hint) {
       initialSlots["categoria_hint"] = categoria_hint;
     }
 
-    // Pre-llenar slots desde params opcionales del CONTEXT
-    if (lat !== undefined && lng !== undefined && initialSlots["ubicacion"] === undefined) {
-      initialSlots["ubicacion"] = { lat, lng };
+    // Pre-llenar slots desde params opcionales del CONTEXT (usando valores canónicos)
+    if (effectiveLat !== undefined && effectiveLng !== undefined && initialSlots["ubicacion"] === undefined) {
+      initialSlots["ubicacion"] = { lat: effectiveLat, lng: effectiveLng };
     }
-    if (image_url && initialSlots["fotos"] === undefined) {
-      initialSlots["fotos"] = [image_url];
+    if (effectiveImageUrl && initialSlots["fotos"] === undefined) {
+      initialSlots["fotos"] = [effectiveImageUrl];
     }
 
     const result = await setFlowState(resolvedConvId, {
@@ -274,6 +305,47 @@ export const reporteSlotLlenar = createTool({
             error: `valor para slot '${slot}' debe ser JSON válido`,
           };
         }
+      }
+    }
+
+    // Override fotos/ubicacion from canonical RequestContext attachments — the LLM cannot
+    // overwrite an actual uploaded image with "sin_foto" or an empty value.
+    if (slot === "fotos") {
+      const canonicalImageUrl = ctx?.requestContext?.has("image_url")
+        ? (ctx.requestContext.get("image_url") as string)
+        : undefined;
+      if (canonicalImageUrl) {
+        if (decodedValor !== canonicalImageUrl && JSON.stringify(decodedValor) !== JSON.stringify([canonicalImageUrl])) {
+          console.warn(
+            "[reportes] slot fotos override: LLM passed '" +
+              JSON.stringify(decodedValor) +
+              "' but canonical image_url=" +
+              canonicalImageUrl +
+              " — forcing canonical value.",
+          );
+        }
+        decodedValor = [canonicalImageUrl];
+      }
+    } else if (slot === "ubicacion") {
+      const canonicalLat = ctx?.requestContext?.has("lat")
+        ? (ctx.requestContext.get("lat") as number)
+        : undefined;
+      const canonicalLng = ctx?.requestContext?.has("lng")
+        ? (ctx.requestContext.get("lng") as number)
+        : undefined;
+      if (canonicalLat !== undefined && canonicalLng !== undefined) {
+        if (JSON.stringify(decodedValor) !== JSON.stringify({ lat: canonicalLat, lng: canonicalLng })) {
+          console.warn(
+            "[reportes] slot ubicacion override: LLM passed '" +
+              JSON.stringify(decodedValor) +
+              "' but canonical lat=" +
+              canonicalLat +
+              " lng=" +
+              canonicalLng +
+              " — forcing canonical value.",
+          );
+        }
+        decodedValor = { lat: canonicalLat, lng: canonicalLng };
       }
     }
 

@@ -366,6 +366,14 @@ export async function processTurn(
   const requestContext = new RequestContext();
   requestContext.set("conversation_id", conversationId);
   requestContext.set("user_id", input.userId);
+  // Inject attachment data so tools can override LLM-passed image_url / lat / lng.
+  if (input.attachments?.imageUrl) {
+    requestContext.set("image_url", input.attachments.imageUrl);
+  }
+  if (input.attachments?.lat !== undefined && input.attachments?.lng !== undefined) {
+    requestContext.set("lat", input.attachments.lat);
+    requestContext.set("lng", input.attachments.lng);
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let agentResult: any;
