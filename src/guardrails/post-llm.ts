@@ -28,6 +28,16 @@
 /** Matches phone-number-like sequences (MX domestic or international segments). */
 const PHONE_RE = /\b\d{2,4}[\s-]?\d{3,4}[\s-]?\d{3,4}\b/g;
 
+/**
+ * Strip URLs from a string before applying digit-based regexes.
+ * URLs (https?://...) come verbatim from tool outputs — their coordinate digits
+ * (e.g. origin=19.432600,-99.130000) are not invented by the LLM and must not
+ * be flagged as phantom phone numbers.
+ */
+function stripUrls(text: string): string {
+  return text.replace(/https?:\/\/\S+/g, ' ');
+}
+
 /** Matches Alcaldía Cuauhtémoc folio identifiers. */
 const FOLIO_RE = /CUH-\d{8}-\d{3}/g;
 
@@ -125,7 +135,9 @@ export function citationCheck(
   }
 
   // Hard-fail checks
-  checkMatches(PHONE_RE, responseText, missing);
+  // Strip URLs before phone scan: coordinate digits inside a maps URL
+  // (e.g. origin=19.432600,-99.130000) could otherwise match PHONE_RE.
+  checkMatches(PHONE_RE, stripUrls(responseText), missing);
   checkMatches(FOLIO_RE, responseText, missing);
   checkMatches(TIME_RE, responseText, missing);
 
