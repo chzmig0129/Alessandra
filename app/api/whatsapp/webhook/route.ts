@@ -56,29 +56,61 @@ async function uploadTwilioMediaToBucket(
   }
   try {
     const auth = Buffer.from(`${accountSid}:${authToken}`).toString("base64");
-    const res = await fetch(mediaUrl, { headers: { Authorization: `Basic ${auth}` } });
+
+    // Fetch from Twilio with 8s AbortController timeout
+    const ctrl = new AbortController();
+    const fetchTimeoutId = setTimeout(() => ctrl.abort(), 8000);
+    let res: Response;
+    try {
+      res = await fetch(mediaUrl, {
+        headers: { Authorization: `Basic ${auth}` },
+        signal: ctrl.signal,
+      });
+      clearTimeout(fetchTimeoutId);
+    } catch (err) {
+      clearTimeout(fetchTimeoutId);
+      console.error("[whatsapp/webhook] twilio fetch failed/timeout:", err);
+      return null;
+    }
+
     if (!res.ok) {
       console.error(`[whatsapp/webhook] Twilio media fetch failed: ${res.status}`);
       return null;
     }
     const buf = Buffer.from(await res.arrayBuffer());
     const path = `whatsapp/${userId}/${randomUUID()}.${ext}`;
-    const { error: upErr } = await supabaseAdmin.storage
+
+    // Upload to Supabase storage with 8s Promise.race timeout
+    const uploadPromise = supabaseAdmin.storage
       .from(STORAGE_BUCKET)
       .upload(path, buf, { contentType: mimeType, upsert: false });
-    if (upErr) {
-      console.error(`[whatsapp/webhook] Storage upload failed: ${upErr.message}`);
+    const uploadTimeoutPromise = new Promise<{ error: { message: string } }>((resolve) =>
+      setTimeout(() => resolve({ error: { message: "upload_timeout_8s" } }), 8000),
+    );
+    const uploadResult = await Promise.race([uploadPromise, uploadTimeoutPromise]);
+    if ("error" in uploadResult && uploadResult.error) {
+      console.error(`[whatsapp/webhook] Storage upload failed: ${uploadResult.error.message}`);
       return null;
     }
-    const { data: signed, error: signErr } = await supabaseAdmin.storage
+
+    // createSignedUrl with 5s Promise.race timeout
+    const signedUrlPromise = supabaseAdmin.storage
       .from(STORAGE_BUCKET)
       .createSignedUrl(path, 3600);
-    if (signErr || !signed?.signedUrl) {
-      console.error(`[whatsapp/webhook] Signed URL failed: ${signErr?.message ?? "no url"}`);
+    const signedUrlTimeoutPromise = new Promise<{ data: null; error: { message: string } }>(
+      (resolve) =>
+        setTimeout(() => resolve({ data: null, error: { message: "signed_url_timeout_5s" } }), 5000),
+    );
+    const signResult = await Promise.race([signedUrlPromise, signedUrlTimeoutPromise]);
+    if (signResult.error || !signResult.data?.signedUrl) {
+      console.error(
+        `[whatsapp/webhook] Signed URL failed: ${signResult.error?.message ?? "no url"}`,
+      );
       return null;
     }
+
     console.info(`[whatsapp/webhook] Media uploaded path=${path}`);
-    return signed.signedUrl;
+    return signResult.data.signedUrl;
   } catch (err) {
     console.error("[whatsapp/webhook] uploadTwilioMediaToBucket error:", err);
     return null;
@@ -205,7 +237,19 @@ async function processInBackground(
   userId: string,
   userMessage: string,
   attachments: { lat?: number; lng?: number; imageUrl?: string } | undefined,
+  mediaInfo: { url: string; mimeType: string } | null,
 ): Promise<void> {
+  if (mediaInfo) {
+    // ensure attachments is not undefined
+    if (!attachments) attachments = {};
+    try {
+      const uploaded = await uploadTwilioMediaToBucket(mediaInfo.url, mediaInfo.mimeType, userId);
+      if (uploaded) attachments.imageUrl = uploaded;
+    } catch (err) {
+      console.error("[whatsapp/webhook] background media upload failed:", err);
+    }
+  }
+
   let responseText: string;
   try {
     const result = await processTurn({
@@ -406,13 +450,6 @@ export async function POST(req: Request): Promise<Response> {
     attachments.lng = Number(longitude);
   }
 
-  if (numMedia > 0 && mediaUrl0 && mediaContentType0 && mediaContentType0.startsWith("image/")) {
-    const uploaded = await uploadTwilioMediaToBucket(mediaUrl0, mediaContentType0, user.id);
-    if (uploaded) {
-      attachments.imageUrl = uploaded;
-    }
-  }
-
   // ---- 8. Fire background task + ACK immediately ----------------------------
   //
   // Do NOT await processTurn here — it can take 20-30s for complex queries,
@@ -424,11 +461,17 @@ export async function POST(req: Request): Promise<Response> {
   // writes to it.)
   void conversationId;
 
+  const mediaInfo =
+    numMedia > 0 && mediaUrl0 && mediaContentType0 && mediaContentType0.startsWith("image/")
+      ? { url: mediaUrl0, mimeType: mediaContentType0 }
+      : null;
+
   void processInBackground(
     rawFrom,
     user.id,
     userMessage,
     Object.keys(attachments).length > 0 ? attachments : undefined,
+    mediaInfo,
   ).catch((err) =>
     console.error("[whatsapp/webhook] background task failed:", err),
   );
