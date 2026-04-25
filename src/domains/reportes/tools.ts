@@ -50,7 +50,9 @@ export const reporteIniciar = createTool({
     "DESPUÉS de invocar esta tool, DEBES llenar todos los slots con reporte_slot_llenar en ORDEN: " +
     "categoria → tipo → descripcion → ubicacion → fotos → confirmado. " +
     "NO llames reporte_confirmar_y_crear sin haber pasado todos los slots primero. " +
-    "FLUJO OBLIGATORIO: los 6 slots deben llenarse en ese orden antes de confirmar.",
+    "FLUJO OBLIGATORIO: los 6 slots deben llenarse en ese orden antes de confirmar. " +
+    "Recuerda: nunca completes el flujo entero en un solo turn. Después de llenar los primeros 5 slots " +
+    "(hasta fotos), PAUSA con el resumen y espera la confirmación del usuario en el siguiente mensaje.",
   inputSchema: z.object({
     conversation_id: z
       .string()
@@ -133,6 +135,19 @@ export const reporteSlotLlenar = createTool({
     "- ubicacion: JSON string. Si tienes coords del CONTEXT lat/lng, usa {\"lat\":19.44,\"lng\":-99.15}. Si dirección libre: {\"direccion_libre\":\"Av Reforma 100\",\"colonia\":\"Juárez\"}\n" +
     "- fotos: JSON string. Array de URLs [\"https://...\"] o el literal \"sin_foto\" si el usuario no envió imagen\n" +
     "- confirmado: el literal string \"true\" SOLO después de mostrar el resumen al usuario Y recibir \"sí\"/\"confirmo\" explícito\n\n" +
+    "DOS TURNS — REGLA DE PAUSA OBLIGATORIA:\n" +
+    "- Turn donde recolectas datos (foto, texto, coords del usuario): llena slots categoria, tipo, descripcion, ubicacion, fotos. " +
+    "DESPUÉS escribe el resumen al usuario:\n" +
+    "  Voy a registrar:\n" +
+    "  - Categoría: <slug>\n" +
+    "  - Tipo: <slug>\n" +
+    "  - Descripción: <descripcion>\n" +
+    "  - Ubicación: <coords o dirección>\n" +
+    "  - Fotos: <sí/no>\n" +
+    "  ¿Confirmas? Responde sí o confirmo.\n" +
+    "  Y PARA. NO llenes confirmado:true en este turn. NO llames reporte_confirmar_y_crear.\n" +
+    "- Turn donde el usuario dice sí/confirmo: SOLO entonces llamas slot_llenar(slot:\"confirmado\", valor:\"true\") " +
+    "seguido de reporte_confirmar_y_crear, y redactas el mensaje con el folio.\n\n" +
     "REGLAS DURAS:\n" +
     "- NUNCA llames reporte_confirmar_y_crear sin haber llenado confirmado:true primero.\n" +
     "- El error EL FLUJO NO ESTÁ EN ESTADO CONFIRMACION significa que te saltaste slots — vuelve a llenarlos en orden.",
@@ -316,7 +331,10 @@ export const reporteConfirmarYCrear = createTool({
     "Si recibes error EL FLUJO NO ESTÁ EN ESTADO CONFIRMACION, significa que faltan slots: " +
     "vuelve a reporte_slot_llenar y completa categoria, tipo, descripcion, ubicacion, fotos y confirmado " +
     "en FLUJO OBLIGATORIO (orden: categoria → tipo → descripcion → ubicacion → fotos → confirmado) ANTES de reintentar. " +
-    "Devuelve folio (CUH-YYYYMMDD-NNN) y, si urgente, contactos de emergencia.",
+    "Devuelve folio (CUH-YYYYMMDD-NNN) y, si urgente, contactos de emergencia. " +
+    "REGLA: solo invoca esta tool en el TURN POSTERIOR a recibir el sí/confirmo del usuario. " +
+    "Si la estás invocando en el mismo turn donde recolectaste los datos, te SALTASTE la pausa de confirmación " +
+    "— vuelve a redactar el resumen y espera la respuesta del usuario.",
   inputSchema: z.object({
     conversation_id: z
       .string()

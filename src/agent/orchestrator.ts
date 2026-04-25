@@ -320,7 +320,7 @@ export async function processTurn(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     agentResult = await alessandraAgent.generateLegacy(messagesForAgent as any, {
       instructions: fullSystemPrompt,
-      maxSteps: 8,
+      maxSteps: 15,
       temperature,
     });
   } catch (err) {
