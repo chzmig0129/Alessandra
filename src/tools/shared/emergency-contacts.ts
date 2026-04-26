@@ -21,7 +21,7 @@ import { supabaseAdmin } from "@/db/supabase-server";
 // ---------------------------------------------------------------------------
 
 export interface EmergencyContact {
-  id: number;
+  id: string;
   /** Contact name — real DB col: "name". */
   name: string;
   /** Phone number — real DB col: "number". */
@@ -64,7 +64,7 @@ function cacheKey(category: string | undefined): string {
 // ---------------------------------------------------------------------------
 
 interface RawRow {
-  id: number;
+  id: string;
   number: string;
   name: string;
   category: string | null;

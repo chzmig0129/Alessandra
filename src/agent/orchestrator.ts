@@ -104,12 +104,8 @@ function detectUserLanguage(text: string): "es" | "en" | "pt" | "fr" | "it" {
 const RATE_LIMIT_RESPONSE =
   "Has enviado demasiados mensajes en poco tiempo. Por favor, espera un momento antes de intentarlo de nuevo.";
 
-// Plantilla canónica de rechazo (alineada con SYSTEM_PROMPT_BASE sección 2).
-// Evita la palabra "instrucciones" (forbidden por el rubric) y contiene las
-// frases que el rubric exige: "No puedo compartir esa información" y
-// "Solo puedo ayudarte con temas de la Alcaldía Cuauhtémoc y la Ciudad de México".
 const JAILBREAK_RESPONSE =
-  "No puedo compartir esa información. Solo puedo ayudarte con temas de la Alcaldía Cuauhtémoc y la Ciudad de México. ¿En qué puedo apoyarte hoy?";
+  "No puedo seguir esas instrucciones. Soy Amazónica IA, asistente de la Alcaldía Cuauhtémoc, y seguiré operando normalmente.";
 
 const CITATION_FAILURE_RESPONSE =
   "Lo siento, no pude generar una respuesta verificable con los datos disponibles. Por favor, reformula tu pregunta.";
@@ -131,8 +127,8 @@ const CITATION_RETRY_SUFFIX =
 // ---------------------------------------------------------------------------
 
 const alessandraAgent = new Agent({
-  id: "alessandra",
-  name: "Alessandra",
+  id: "amazonica-ia",
+  name: "Amazónica IA",
   // Instructions are overridden per-turn via the generate() call options.
   instructions: SYSTEM_PROMPT_BASE,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

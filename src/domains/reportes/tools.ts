@@ -31,7 +31,7 @@ import { getTurnContext } from "@/lib/turn-context";
 // ---------------------------------------------------------------------------
 
 const EmergencyContactSchema = z.object({
-  id: z.number(),
+  id: z.string(),
   nombre: z.string(),
   telefono: z.string(),
   categoria: z.string().nullable(),

@@ -214,13 +214,13 @@ export const emergencia_mujer_tool = createTool({
         ),
         contactos: z.array(
           z.object({
-            id: z.number(),
+            id: z.string(),
             name: z.string(),
             number: z.string(),
             category: z.string().nullable(),
             description: z.string().nullable(),
             available_24_7: z.boolean(),
-            whatsapp: z.string().nullable(),
+            whatsapp: z.string().nullish(),
           }),
         ),
         telefonos_clave: z.array(z.string()),

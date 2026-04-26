@@ -349,6 +349,23 @@ export async function fetchPartidos(
 // fetchSedeInfo
 // ---------------------------------------------------------------------------
 
+const SEDE_ALIASES: Record<string, string> = {
+  azteca: "Banorte",
+  "estadio azteca": "Banorte",
+  coloso: "Banorte",
+  "coloso de santa úrsula": "Banorte",
+  "coloso de santa ursula": "Banorte",
+  chivas: "Akron",
+  "estadio chivas": "Akron",
+  omnilife: "Akron",
+  "estadio omnilife": "Akron",
+  bancomer: "BBVA",
+  "estadio bbva bancomer": "BBVA",
+  "gigante de acero": "BBVA",
+  rayados: "BBVA",
+  "estadio rayados": "BBVA",
+};
+
 export async function fetchSedeInfo(
   idOrCity: string | number,
 ): Promise<{ data: SedeRow | null; error: string | null }> {
@@ -362,12 +379,18 @@ export async function fetchSedeInfo(
     return { data: data as SedeRow | null, error: null };
   }
 
+  // Resolve alias to canonical name fragment if user gave a popular alias.
+  const queryRaw = String(idOrCity).trim();
+  const queryLower = queryRaw.toLowerCase();
+  const aliasMatch = SEDE_ALIASES[queryLower];
+  const queryEffective = aliasMatch ?? queryRaw;
+
   // Search by city or stadium name fragment (ciudad ILIKE per spec)
   const { data, error } = await supabaseAdmin
     .from("v_mundial_sedes")
     .select("*")
     .or(
-      `ciudad.ilike.%${idOrCity}%,nombre.ilike.%${idOrCity}%`,
+      `ciudad.ilike.%${queryEffective}%,nombre.ilike.%${queryEffective}%`,
     )
     .limit(1)
     .maybeSingle();

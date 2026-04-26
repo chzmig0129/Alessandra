@@ -42,15 +42,21 @@ const InputSchema = z.object({
         "'qué hacer en Cuauhtémoc el fin de semana', 'centros de salud cercanos'.",
     ),
   category: z
-    .string()
+    .enum([
+      "tramites",
+      "puntos_violeta",
+      "info_general",
+      "salud",
+      "deportes",
+      "estadios",
+      "gastronomia",
+      "cultura",
+      "servicios_urbanos",
+      "eventos",
+    ])
     .optional()
     .describe(
-      "Opcional. Filtrar por categoría específica. Categorías válidas en la BD: " +
-        "tramites, puntos_violeta, info_general, salud, deportes, estadios, " +
-        "gastronomia, cultura, servicios_urbanos, eventos, animales, " +
-        "canal_atencion, seguridad, seguridad_emergencias. " +
-        "Si pasas otra (ej. 'transporte'), se ignora silenciosamente y se busca en TODAS. " +
-        "Si no la pasas, busca en TODAS las categorías.",
+      "Opcional. Filtrar por categoría específica. Si no la pasas, busca en TODAS las categorías.",
     ),
   limit: z
     .coerce.number()
@@ -109,32 +115,6 @@ export const knowledgeBuscar = createTool({
       };
     }
 
-    // Categorías reales en la BD. Si el LLM pasa una fuera de esta lista,
-    // la descartamos en lugar de filtrar a 0 rows o lanzar error.
-    const VALID_CATEGORIES = new Set([
-      "tramites",
-      "puntos_violeta",
-      "info_general",
-      "salud",
-      "deportes",
-      "estadios",
-      "gastronomia",
-      "cultura",
-      "servicios_urbanos",
-      "eventos",
-      "animales",
-      "canal_atencion",
-      "seguridad",
-      "seguridad_emergencias",
-    ]);
-    const effectiveCategory =
-      category && VALID_CATEGORIES.has(category) ? category : null;
-    if (category && effectiveCategory == null) {
-      console.warn(
-        `[knowledge_buscar] categoría '${category}' no existe en la BD — búsqueda libre.`,
-      );
-    }
-
     try {
       // 1. Generar embedding del query
       const { embedding } = await embed({
@@ -149,7 +129,7 @@ export const knowledgeBuscar = createTool({
         query_embedding: embedding,
         match_threshold: 0.2,
         match_count: limit ?? 5,
-        filter_category: effectiveCategory,
+        filter_category: category ?? null,
       });
 
       if (error) {

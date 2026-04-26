@@ -18,6 +18,7 @@ import Twilio from "twilio";
 import { env } from "@/env";
 import { getOrCreateUser, getOrCreateActiveSession } from "@/memory/session";
 import { processTurn } from "@/agent/orchestrator";
+import { welcomeBlock } from "@/agent/prompts/welcome";
 import { mdToWhatsApp } from "@/lib/whatsapp-format";
 import { sendWhatsAppMessages } from "@/lib/whatsapp-client";
 import { supabaseAdmin } from "@/db/supabase-server";
@@ -411,12 +412,22 @@ export async function POST(req: Request): Promise<Response> {
   // ---- 5. Resolve conversation -----------------------------------------------
 
   let conversationId: string;
+  let sessionIsNew = false;
   try {
     const session = await getOrCreateActiveSession(user.id, "whatsapp");
     conversationId = session.conversationId;
+    sessionIsNew = session.isNew;
   } catch (err) {
     console.error("[whatsapp/webhook] getOrCreateActiveSession failed:", err);
     return twimlResponse("Tuve un problema técnico. Inténtalo de nuevo en unos segundos.");
+  }
+
+  // Send welcome block as a separate first message for brand-new sessions.
+  // Includes legal disclaimer + warm greeting. Detached so it doesn't block ACK.
+  if (sessionIsNew) {
+    void sendWhatsAppMessages(rawFrom, [welcomeBlock("es")]).catch((err) =>
+      console.error("[whatsapp/webhook] welcome send failed:", err),
+    );
   }
 
   // ---- 6. Build user message with optional location marker -------------------

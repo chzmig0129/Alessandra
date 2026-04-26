@@ -30,6 +30,12 @@ NO declines en el primer turno sin haber invocado knowledge_buscar al menos una 
   if (domain === 'mundial') {
     return `\n\n[INTERNAL ROUTING HINT: likely domain=mundial, confidence=${confidence.toFixed(2)}. Confirm by invoking a mundial_* tool.${langReminder}
 
+EJECUCIÓN DIRECTA — sin pedir permiso:
+- Si el usuario pregunta por un JUGADOR (Messi, Mbappé, Cristiano, Neymar, Lewandowski, Modrić, Bellingham, Kane, Yamal, Pedri, De Bruyne, Son, Lautaro, Rodrygo, Vinícius, etc.), MAPEA mentalmente jugador→selección y EJECUTA mundial_partidos_buscar({equipo:'<nombre selección en inglés>'}) en este MISMO turn. Devuelve la lista directamente con una nota tipo "Mbappé juega con Francia. Sus partidos son: ...".
+- PROHIBIDO responder "¿Te gustaría que busque los partidos de X?" cuando ya identificaste la selección. Eso es perder el turn. Solo busca. El usuario YA dijo que quiere los partidos.
+- PROHIBIDO responder "no tengo información sobre Mbappé" — sí la tienes (sus partidos = los de Francia).
+- Equipo en mundial_partidos_buscar acepta nombres en inglés: 'Argentina', 'France', 'Portugal', 'Brazil', 'England', 'Spain', 'Belgium', 'Korea Republic', 'Croatia', 'Poland'.
+
 GEO-ROUTING: Si el usuario pregunta cómo llegar a una sede o fan fest:
 - Si NO tienes lat/lng del usuario en el contexto, NO llames mundial_como_llegar. Responde pidiendo ubicación: "Para calcular la ruta necesito tu ubicación. En WhatsApp mándala con el clip 📎 → Ubicación. En web, autoriza la ubicación cuando el navegador la pida."
 - Si tienes lat/lng, sigue estos dos pasos en orden:
@@ -39,6 +45,13 @@ GEO-ROUTING: Si el usuario pregunta cómo llegar a una sede o fan fest:
   }
   if (domain === 'puntos_violeta') {
     return `\n\n[INTERNAL ROUTING HINT: likely domain=puntos_violeta, confidence=${confidence.toFixed(2)}. Confirm by invoking a puntos_violeta_* tool.${langReminder}
+
+QUÉ SON LOS PUNTOS VIOLETA — contexto que SIEMPRE debes dar al presentar resultados:
+La red de Puntos Violeta de la Alcaldía Cuauhtémoc es una red de ESPACIOS SEGUROS donde mujeres en situación de violencia o riesgo pueden recibir apoyo, llamar al 911, esperar ayuda, o pedir asistencia. La red incluye TRES tipos de puntos:
+- Comercios participantes (farmacias, restaurantes, tiendas) capacitados para auxiliar — el campo tipo_atencion dice "Comercio".
+- Puntos institucionales (oficinas de la alcaldía, centros culturales) — tipo_atencion: "Punto violeta".
+- Otros (clínicas, escuelas) según tipo_atencion devuelto.
+Cuando regreses la lista, ENMARCA explícitamente que son parte de la red oficial de Puntos Violeta. Ej: "Aquí tienes Puntos Violeta cerca de ti — son espacios seguros de la red oficial donde puedes recibir auxilio. Incluye tanto comercios participantes como espacios institucionales:" y luego la lista. Si un row es comercio, dilo claro: "Farmacia Similares (comercio Punto Violeta)". El usuario debe entender que NO te equivocaste — los comercios son parte legítima de la red.
 
 GEO-ROUTING: Cuando el usuario pregunte por el punto violeta más cercano:
 - Si NO tienes lat/lng: pide ubicación con el mismo formato: "Para calcular la ruta necesito tu ubicación. En WhatsApp mándala con el clip 📎 → Ubicación. En web, autoriza la ubicación cuando el navegador la pida."

@@ -72,6 +72,8 @@ export interface PuntosVioletaFilters {
   radio_km?: number;
   /** Neighborhood filter (partial match against colonia) */
   colonia?: string;
+  /** Name fragment (partial ILIKE match against nombre). Useful when user mentions a specific point by name. */
+  nombre?: string;
   /** Attention type filter (exact match against tipo_atencion) */
   tipo_atencion?: string;
   /** If true, only return points with atencion_24_7=true */
@@ -336,6 +338,10 @@ export async function fetchPuntosVioleta(
       const orFilter = tokens.map((t) => `colonia.ilike.%${t}%`).join(",");
       query = query.or(orFilter);
     }
+  }
+
+  if (filters.nombre) {
+    query = query.ilike("nombre", `%${filters.nombre}%`);
   }
 
   if (filters.tipo_atencion) {

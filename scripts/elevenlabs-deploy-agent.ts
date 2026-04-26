@@ -126,7 +126,7 @@ const tools: ServerTool[] = VOICE_TOOL_SCHEMAS.map((t) => ({
 // ---------------------------------------------------------------------------
 
 const agentConfig = {
-  name: "Alessandra Voz",
+  name: "Amazónica IA Voz",
   conversation_config: {
     agent: {
       prompt: {
@@ -136,7 +136,7 @@ const agentConfig = {
         tools,
       },
       first_message:
-        "Hola, soy Alessandra, asistente de la Alcaldía Cuauhtémoc. ¿En qué le ayudo?",
+        "Hola, ¡qué gusto saludarte! Soy Amazónica IA, asistente de la Alcaldía Cuauhtémoc. ¿Cómo puedo ayudarte hoy, vecina o vecino?",
       language: "es",
     },
     tts: {

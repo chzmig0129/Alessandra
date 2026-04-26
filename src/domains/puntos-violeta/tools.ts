@@ -46,6 +46,10 @@ export const puntosVioletaBuscar = createTool({
       .string()
       .optional()
       .describe("Opcional. Si el usuario menciona una colonia explícita (Roma Norte, Doctores, Centro, Juárez, Condesa) pásala. Si no, omítela."),
+    nombre: z
+      .string()
+      .optional()
+      .describe("Opcional. Si el usuario menciona el NOMBRE específico de un punto (ej: 'SIMILANDIA Centro', 'Mercaderes', 'farmacia Pino Suárez'), pasa el fragmento del nombre. Búsqueda parcial ILIKE."),
     tipo_atencion: z
       .string()
       .optional()
@@ -98,6 +102,7 @@ export const puntosVioletaBuscar = createTool({
     lng,
     radio_km,
     colonia,
+    nombre,
     tipo_atencion,
     abierto_ahora,
     limit,
@@ -106,6 +111,7 @@ export const puntosVioletaBuscar = createTool({
     lng?: number;
     radio_km?: number;
     colonia?: string;
+    nombre?: string;
     tipo_atencion?: string;
     abierto_ahora?: boolean;
     limit?: number;
@@ -115,6 +121,7 @@ export const puntosVioletaBuscar = createTool({
       lng,
       radio_km,
       colonia,
+      nombre,
       tipo_atencion,
       abierto_ahora,
       limit,

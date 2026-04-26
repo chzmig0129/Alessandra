@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "eval": "tsx tests/eval/runner.ts",
+    "eval": "node --env-file=.env.local --import tsx tests/eval/runner.ts",
     "test": "vitest run",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
