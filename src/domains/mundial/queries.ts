@@ -30,6 +30,9 @@ import { supabaseAdmin } from "@/db/supabase-server";
 
 export interface PartidoRow {
   id: number;
+  /** Raw UTC timestamptz. Use for UTC comparisons, ordering, and ISO serialization. */
+  fecha_utc: string | null;
+  /** CDMX local wall-clock time (timestamp without tz). Use for user-facing display and CDMX date-range filters. */
   fecha_hora_cdmx: string | null;
   fase: string | null;
   grupo: string | null;
@@ -210,6 +213,7 @@ function toPartidoRow(raw: Record<string, unknown>): PartidoRow {
   const goles_visitante = (r["goles_visitante"] ?? null) as number | null;
   return {
     id: r["id"] as number,
+    fecha_utc: (r["fecha_utc"] ?? null) as string | null,
     fecha_hora_cdmx: (r["fecha_hora_cdmx"] ?? null) as string | null,
     fase: (r["fase"] ?? null) as string | null,
     grupo: (r["grupo"] ?? null) as string | null,
@@ -256,14 +260,17 @@ export async function fetchPartidos(
     .limit(limit);
 
   if (filters.fecha) {
-    // fecha_hora_cdmx is timestamptz; filter by date range in CDMX timezone.
+    // fecha_hora_cdmx is now a true CDMX local timestamp (timestamp without tz).
+    // User-supplied fecha is a CDMX local date (YYYY-MM-DD), so comparing
+    // against fecha_hora_cdmx is correct — local date to local timestamp.
     query = query
       .gte("fecha_hora_cdmx", `${filters.fecha}T00:00:00`)
       .lt("fecha_hora_cdmx", `${filters.fecha}T23:59:59`);
   }
 
   if (filters.proximos) {
-    query = query.gte("fecha_hora_cdmx", new Date().toISOString());
+    // Compare against fecha_utc (true UTC timestamptz) using a UTC ISO string — apples-to-apples.
+    query = query.gte("fecha_utc", new Date().toISOString());
   }
 
   if (filters.fase) {
@@ -325,9 +332,9 @@ export async function fetchPartidos(
     query = query.or(`${codeClauses},${nameClauses}`);
   }
 
-  // Default order: fecha_hora_cdmx ASC
+  // Default order: fecha_utc ASC (true chronological order via UTC column)
   const order = filters.order_by === "desc" ? { ascending: false } : { ascending: true };
-  query = query.order("fecha_hora_cdmx", order);
+  query = query.order("fecha_utc", order);
 
   const { data, error } = await query;
 

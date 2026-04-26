@@ -217,7 +217,7 @@ export const mundialPartidosBuscar = createTool({
 
     const rows = finalData.map((row) => ({
       id: row.id,
-      fecha_iso_utc: row.fecha_hora_cdmx,
+      fecha_iso_utc: row.fecha_utc,
       fase: row.fase,
       grupo: row.grupo,
       // NEVER infer: if code is null, use desc literally
@@ -436,6 +436,7 @@ export const mundialPartidoDetalle = createTool({
       ok: z.literal(true),
       data: z.object({
         id: z.number(),
+        fecha_utc: z.string().nullable(),
         fecha_hora_cdmx: z.string().nullable(),
         fase: z.string().nullable(),
         grupo: z.string().nullable(),
@@ -492,6 +493,7 @@ export const mundialPartidoDetalle = createTool({
       ok: true as const,
       data: {
         id: data.id,
+        fecha_utc: data.fecha_utc,
         fecha_hora_cdmx: data.fecha_hora_cdmx,
         fase: data.fase,
         grupo: data.grupo,
@@ -579,6 +581,7 @@ export const mundialEquipoInfo = createTool({
         proximos_partidos: z.array(
           z.object({
             id: z.number(),
+            fecha_utc: z.string().nullable(),
             fecha_hora_cdmx: z.string().nullable(),
             equipo_a: z.string(),
             equipo_b: z.string(),
@@ -612,6 +615,7 @@ export const mundialEquipoInfo = createTool({
 
     const partidos = proximos_partidos.map((row) => ({
       id: row.id,
+      fecha_utc: row.fecha_utc,
       fecha_hora_cdmx: row.fecha_hora_cdmx,
       // NEVER infer
       equipo_a: row.equipo_a_codigo
