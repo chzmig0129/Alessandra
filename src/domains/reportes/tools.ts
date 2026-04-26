@@ -133,8 +133,11 @@ export const reporteIniciar = createTool({
   inputSchema: z.object({
     conversation_id: z
       .string()
-      .min(1)
-      .describe("ID de la conversación activa (UUID)."),
+      .optional()
+      .describe(
+        "OPCIONAL. El backend lo resuelve del contexto de la sesión (TurnContext / RequestContext). " +
+        "Si lo pasas, será sobreescrito por el canonical. No es necesario que el LLM lo provea.",
+      ),
     intencion: z
       .string()
       .min(1)
@@ -181,6 +184,12 @@ export const reporteIniciar = createTool({
   execute: async ({ conversation_id, lat, lng, image_url, categoria_hint }, ctx) => {
     const { conversation_id: canonicalConvId } = resolveCanonicalIds({ conversation_id }, ctx);
     const resolvedConvId = canonicalConvId ?? conversation_id;
+    if (!resolvedConvId) {
+      return {
+        ok: false as const,
+        error: "conversation_id no disponible: ni el contexto del request ni el LLM lo proveyeron.",
+      };
+    }
 
     // Resolve canonical attachment values from RequestContext (override LLM-passed args).
     const canonical = resolveAttachments({ image_url, lat, lng }, ctx);
@@ -272,8 +281,11 @@ export const reporteSlotLlenar = createTool({
   inputSchema: z.object({
     conversation_id: z
       .string()
-      .min(1)
-      .describe("ID de la conversación activa. Ejemplo: 'conv_abc123'."),
+      .optional()
+      .describe(
+        "OPCIONAL. El backend lo resuelve del contexto de la sesión. " +
+        "No es necesario que el LLM lo provea.",
+      ),
     slot: z
       .string()
       .min(1)
@@ -309,6 +321,12 @@ export const reporteSlotLlenar = createTool({
   execute: async ({ conversation_id, slot, valor }, ctx) => {
     const { conversation_id: canonicalConvId } = resolveCanonicalIds({ conversation_id }, ctx);
     const resolvedConvId = canonicalConvId ?? conversation_id;
+    if (!resolvedConvId) {
+      return {
+        ok: false as const,
+        error: "conversation_id no disponible: ni el contexto del request ni el LLM lo proveyeron.",
+      };
+    }
 
     // 0. Decode `valor`: structured slots (ubicacion / fotos / confirmado) come
     //    as JSON-encoded strings from the LLM; plain text slots stay as-is.
@@ -564,14 +582,17 @@ export const reporteConfirmarYCrear = createTool({
   inputSchema: z.object({
     conversation_id: z
       .string()
-      .min(1)
-      .describe("ID de la conversación activa. Ejemplo: 'conv_abc123'."),
+      .optional()
+      .describe(
+        "OPCIONAL. El backend lo resuelve del contexto de la sesión. " +
+        "No es necesario que el LLM lo provea.",
+      ),
     user_id: z
       .string()
-      .min(1)
+      .optional()
       .describe(
-        "ID del usuario en la tabla public.users. " +
-        "Ejemplo: 'usr_789xyz'. Requerido para asignar el reporte al usuario correcto.",
+        "OPCIONAL. El backend lo resuelve del contexto de la sesión / phone resolution. " +
+        "No es necesario que el LLM lo provea.",
       ),
   }),
   outputSchema: z.discriminatedUnion("ok", [
@@ -590,6 +611,12 @@ export const reporteConfirmarYCrear = createTool({
     const { conversation_id: canonicalConvId, user_id: canonicalUserId } = resolveCanonicalIds({ conversation_id, user_id }, ctx);
     const resolvedConvId = canonicalConvId ?? conversation_id;
     const resolvedUserId = canonicalUserId ?? user_id;
+    if (!resolvedConvId || !resolvedUserId) {
+      return {
+        ok: false as const,
+        error: "conversation_id y user_id no disponibles: ni el contexto del request ni el LLM los proveyeron.",
+      };
+    }
 
     // 1. Load flow
     const flowResult = await getFlowState(resolvedConvId);
@@ -813,10 +840,10 @@ export const reporteCancelar = createTool({
   inputSchema: z.object({
     conversation_id: z
       .string()
-      .min(1)
+      .optional()
       .describe(
-        "ID de la conversación activa cuyo flujo se cancelará. " +
-        "Ejemplo: 'conv_abc123'.",
+        "OPCIONAL. El backend lo resuelve del contexto de la sesión. " +
+        "No es necesario que el LLM lo provea.",
       ),
   }),
   outputSchema: z.discriminatedUnion("ok", [
@@ -826,6 +853,12 @@ export const reporteCancelar = createTool({
   execute: async ({ conversation_id }, ctx) => {
     const { conversation_id: canonicalConvId } = resolveCanonicalIds({ conversation_id }, ctx);
     const resolvedConvId = canonicalConvId ?? conversation_id;
+    if (!resolvedConvId) {
+      return {
+        ok: false as const,
+        error: "conversation_id no disponible: ni el contexto del request ni el LLM lo proveyeron.",
+      };
+    }
 
     const result = await clearFlowState(resolvedConvId);
     if (!result.ok) {
@@ -881,12 +914,18 @@ export const reporteConsultar = createTool({
   inputSchema: z.object({
     conversation_id: z
       .string()
-      .min(1)
-      .describe("ID de la conversación activa (para contexto). Ejemplo: 'conv_abc123'."),
+      .optional()
+      .describe(
+        "OPCIONAL. El backend lo resuelve del contexto de la sesión. " +
+        "No es necesario que el LLM lo provea.",
+      ),
     user_id: z
       .string()
-      .min(1)
-      .describe("ID del usuario que consulta. Ejemplo: 'usr_789xyz'."),
+      .optional()
+      .describe(
+        "OPCIONAL. El backend lo resuelve del contexto de la sesión / phone resolution. " +
+        "No es necesario que el LLM lo provea.",
+      ),
     folio: z
       .string()
       .optional()
@@ -902,6 +941,12 @@ export const reporteConsultar = createTool({
   execute: async ({ conversation_id, user_id, folio }, ctx) => {
     const { user_id: canonicalUserId } = resolveCanonicalIds({ conversation_id, user_id }, ctx);
     const resolvedUserId = canonicalUserId ?? user_id;
+    if (!resolvedUserId) {
+      return {
+        ok: false as const,
+        error: "user_id no disponible: ni el contexto del request ni el LLM lo proveyeron.",
+      };
+    }
 
     let query = supabaseAdmin
       .from("leads")
@@ -965,8 +1010,11 @@ export const reporteListarMios = createTool({
   inputSchema: z.object({
     user_id: z
       .string()
-      .min(1)
-      .describe("ID del usuario que consulta. Ejemplo: 'usr_789xyz'."),
+      .optional()
+      .describe(
+        "OPCIONAL. El backend lo resuelve del contexto de la sesión / phone resolution. " +
+        "No es necesario que el LLM lo provea.",
+      ),
     limit: z
       .number()
       .int()
@@ -989,6 +1037,12 @@ export const reporteListarMios = createTool({
   execute: async ({ user_id, limit }, ctx) => {
     const { user_id: canonicalUserId } = resolveCanonicalIds({ user_id }, ctx);
     const resolvedUserId = canonicalUserId ?? user_id;
+    if (!resolvedUserId) {
+      return {
+        ok: false as const,
+        error: "user_id no disponible: ni el contexto del request ni el LLM lo proveyeron.",
+      };
+    }
     const effectiveLimit = limit ?? 10;
 
     const { data, error } = await supabaseAdmin
