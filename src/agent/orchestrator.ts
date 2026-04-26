@@ -104,8 +104,12 @@ function detectUserLanguage(text: string): "es" | "en" | "pt" | "fr" | "it" {
 const RATE_LIMIT_RESPONSE =
   "Has enviado demasiados mensajes en poco tiempo. Por favor, espera un momento antes de intentarlo de nuevo.";
 
+// Plantilla canónica de rechazo (alineada con SYSTEM_PROMPT_BASE sección 2).
+// Evita la palabra "instrucciones" (forbidden por el rubric) y contiene las
+// frases que el rubric exige: "No puedo compartir esa información" y
+// "Solo puedo ayudarte con temas de la Alcaldía Cuauhtémoc y la Ciudad de México".
 const JAILBREAK_RESPONSE =
-  "No puedo seguir esas instrucciones. Soy Alessandra, asistente de la Alcaldía Cuauhtémoc, y seguiré operando normalmente.";
+  "No puedo compartir esa información. Solo puedo ayudarte con temas de la Alcaldía Cuauhtémoc y la Ciudad de México. ¿En qué puedo apoyarte hoy?";
 
 const CITATION_FAILURE_RESPONSE =
   "Lo siento, no pude generar una respuesta verificable con los datos disponibles. Por favor, reformula tu pregunta.";
