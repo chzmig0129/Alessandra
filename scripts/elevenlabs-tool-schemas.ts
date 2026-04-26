@@ -189,15 +189,10 @@ export const VOICE_TOOL_SCHEMAS: VoiceToolSchema[] = [
     description:
       "Inicia el flujo de un nuevo reporte ciudadano. Invocar en cuanto el usuario exprese intención de reportar " +
       "('quiero reportar', 'hay un bache', 'reportar fuga', 'se cayó un árbol'). " +
-      "Después de esta tool, llenar slots con reporte_slot_llenar en orden: categoria → tipo → descripcion → ubicacion → fotos.",
+      "Después de esta tool, llenar slots con reporte_slot_llenar en orden: categoria → tipo → descripcion → ubicacion.",
     parameters_schema: {
       type: "object",
       properties: {
-        conversation_id: {
-          type: "string",
-          minLength: 1,
-          description: "ID de la conversación activa (UUID).",
-        },
         intencion: {
           type: "string",
           minLength: 1,
@@ -216,7 +211,7 @@ export const VOICE_TOOL_SCHEMAS: VoiceToolSchema[] = [
           description: "Hint inicial de categoría inferido del texto. Ej: 'bache', 'foco', 'basura'.",
         },
       },
-      required: ["conversation_id", "intencion"],
+      required: ["intencion"],
     },
   },
 
@@ -227,31 +222,28 @@ export const VOICE_TOOL_SCHEMAS: VoiceToolSchema[] = [
     name: "reporte_slot_llenar",
     description:
       "Llena un slot del flujo activo de reporte ciudadano. " +
-      "Orden obligatorio: categoria → tipo → descripcion → ubicacion → fotos. " +
-      "Para el slot 'fotos' en voz, pasa siempre el literal 'sin_foto' ya que el canal voz no acepta imágenes.",
+      "Orden obligatorio: categoria → tipo → descripcion → ubicacion. " +
+      "NO uses slot=fotos en canal voz (las fotos se mandan por WhatsApp con el folio). " +
+      "Para confirmar el reporte, llama reporte_confirmar_y_crear directamente.",
     parameters_schema: {
       type: "object",
       properties: {
-        conversation_id: {
-          type: "string",
-          minLength: 1,
-          description: "ID de la conversación activa.",
-        },
         slot: {
           type: "string",
-          enum: ["categoria", "tipo", "descripcion", "ubicacion", "fotos", "confirmado"],
-          description: "Clave del slot a llenar.",
+          enum: ["categoria", "tipo", "descripcion", "ubicacion", "confirmado"],
+          description:
+            "Slot a llenar. NO uses 'fotos' en canal voz (las fotos se mandan por WhatsApp con el folio). " +
+            "Para confirmar el reporte, llama reporte_confirmar_y_crear directamente.",
         },
         valor: {
           type: "string",
           description:
             "Valor del slot como string. " +
             "Para ubicacion: JSON stringify de {lat, lng} o {direccion_libre, colonia}. " +
-            "Para fotos en voz: el literal '\"sin_foto\"'. " +
             "Para confirmado: 'true'. Para categoria/tipo/descripcion: string plano.",
         },
       },
-      required: ["conversation_id", "slot", "valor"],
+      required: ["slot", "valor"],
     },
   },
 
@@ -266,19 +258,8 @@ export const VOICE_TOOL_SCHEMAS: VoiceToolSchema[] = [
       "Devuelve folio (CUH-YYYYMMDD-NNN). Los slots categoria, tipo, descripcion y ubicacion deben estar llenos.",
     parameters_schema: {
       type: "object",
-      properties: {
-        conversation_id: {
-          type: "string",
-          minLength: 1,
-          description: "ID de la conversación activa.",
-        },
-        user_id: {
-          type: "string",
-          minLength: 1,
-          description: "ID del usuario en la tabla public.users.",
-        },
-      },
-      required: ["conversation_id", "user_id"],
+      properties: {},
+      required: [],
     },
   },
 
@@ -289,26 +270,16 @@ export const VOICE_TOOL_SCHEMAS: VoiceToolSchema[] = [
     name: "reporte_consultar",
     description:
       "Consulta un reporte por folio o, si el folio se omite, el más reciente del usuario. " +
-      "Requiere user_id para privacidad.",
+      "El backend inyecta user_id desde el contexto de la sesión.",
     parameters_schema: {
       type: "object",
       properties: {
-        conversation_id: {
-          type: "string",
-          minLength: 1,
-          description: "ID de la conversación activa.",
-        },
-        user_id: {
-          type: "string",
-          minLength: 1,
-          description: "ID del usuario.",
-        },
         folio: {
           type: "string",
           description: "Folio del reporte. Ej: 'CUH-20260101-001'. Opcional — si se omite, devuelve el más reciente.",
         },
       },
-      required: ["conversation_id", "user_id"],
+      required: [],
     },
   },
 
@@ -457,7 +428,10 @@ export const VOICE_TOOL_SCHEMAS: VoiceToolSchema[] = [
   // ---------------------------------------------------------------------------
   {
     name: "emergencia_mujer_canalizar",
-    // TODO: tighten schema
+    // NOTE: No response_schema / output_schema declared here.
+    // ElevenLabs infers the output shape from the backend response and may emit a soft
+    // validation warning if the returned `id` field is a number (integer in DB) rather
+    // than a string. This is accepted behavior — no output schema fix needed (Fix C no-op).
     description:
       "Activa el protocolo de emergencia para situaciones de violencia de género. " +
       "Devuelve Puntos Violeta 24/7 más cercanos, contactos de emergencia y teléfonos clave (*765 LUNAS, 911, LOCATEL).",

@@ -26,7 +26,9 @@ Si el ciudadano quiere mandar foto de un reporte: para anexar foto, mándame Wha
 
 NO menciones imágenes en respuestas.
 
-NO uses tools que requieran imagen.`;
+NO uses tools que requieran imagen.
+
+* Cuando levantes un reporte: llena SOLO los slots categoria, tipo, descripcion, ubicacion (en ese orden). NO llenes el slot fotos (en voz no aplica). Para confirmar el reporte, llama reporte_confirmar_y_crear directamente — no llames slot=confirmado.`;
 
 /**
  * Builds the full voice prompt by appending VOICE_CHANNEL_OVERRIDE to the base prompt.

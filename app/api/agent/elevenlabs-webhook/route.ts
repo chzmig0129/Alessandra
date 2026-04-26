@@ -37,9 +37,23 @@ interface ElevenLabsPayload {
     conversation_id?: string;
     transcript?: ElevenLabsTranscriptEntry[];
     metadata?: {
+      /** Legacy fields — never populated by ElevenLabs; kept for TS completeness */
       phone_number?: string;
       phone_number_id?: string;
+      /** Twilio inbound call metadata */
+      phone_call?: {
+        external_number?: string;
+        [key: string]: unknown;
+      };
       call_duration_secs?: number;
+    };
+    /** Populated when the call originates from the react_sdk widget or Twilio */
+    conversation_initiation_client_data?: {
+      dynamic_variables?: {
+        system__caller_id?: string;
+        [key: string]: unknown;
+      };
+      [key: string]: unknown;
     };
     analysis?: unknown;
   };
@@ -179,28 +193,41 @@ export async function POST(req: Request): Promise<Response> {
   const analysis = callData.analysis ?? null;
 
   // ---- 4. Resolve phone number -----------------------------------------------
+  //
+  // Priority order (per ElevenLabs payload shape):
+  //   1. data.metadata.phone_call.external_number  — Twilio inbound (E.164)
+  //   2. data.conversation_initiation_client_data.dynamic_variables.system__caller_id
+  //   3. Synthetic "voice:anon-<conversation_id>" — react_sdk widget or unknown source
+  //
+  // We NEVER bail out here: every call must produce a user row and a transcript row.
 
-  const phoneNumber =
-    callData.metadata?.phone_number ??
-    callData.metadata?.phone_number_id ??
+  const meta = callData.metadata ?? {};
+  const dynVars = callData.conversation_initiation_client_data?.dynamic_variables ?? {};
+
+  const callerPhone =
+    meta.phone_call?.external_number ??         // 1. Twilio inbound (preferred)
+    dynVars.system__caller_id ??                // 2. Dynamic variable fallback
     null;
 
-  if (!phoneNumber) {
+  // Last-resort synthetic identifier so we still persist the transcript
+  const phoneForLookup = callerPhone ?? `voice:anon-${elevenCallId ?? Date.now()}`;
+
+  if (!callerPhone && !elevenCallId) {
+    // Truly malformed payload — log warning but continue so ElevenLabs won't retry
     console.warn(
-      `${LOG} No phone_number or phone_number_id in metadata — cannot resolve user. eleven_call_id=${elevenCallId ?? "unknown"}.`,
+      `${LOG} No callerPhone and no conversation_id in payload — using synthetic id. Payload may be malformed.`,
     );
-    // Return 200 so ElevenLabs does not retry
-    return new Response(JSON.stringify({ ok: true, warning: "no_phone" }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+  } else if (!callerPhone) {
+    console.info(
+      `${LOG} No caller phone (react_sdk or unknown source) — using synthetic id: ${phoneForLookup}. eleven_call_id=${elevenCallId}.`,
+    );
   }
 
   // ---- 5. Resolve user -------------------------------------------------------
 
-  const userResult = await getOrCreateUser(phoneNumber);
+  const userResult = await getOrCreateUser(phoneForLookup);
   if (!userResult.ok) {
-    console.error(`${LOG} getOrCreateUser failed for phone=${phoneNumber}:`, userResult.error);
+    console.error(`${LOG} getOrCreateUser failed for phone=${phoneForLookup}:`, userResult.error);
     // Return 200 — user resolution failure is transient; ElevenLabs retry won't help
     return new Response(JSON.stringify({ ok: true, warning: "user_resolution_failed" }), {
       status: 200,

@@ -132,6 +132,7 @@ const agentConfig = {
       prompt: {
         prompt: voicePrompt,
         llm: "gpt-4o-mini",
+        reasoning_effort: null,
         tools,
       },
       first_message:
