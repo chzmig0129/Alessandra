@@ -16,15 +16,14 @@
  * This is modelled as a single virtual slot `ubicacion` whose validator
  * accepts either form.
  *
- * For categoria/tipo: validators are async and use taxonomy helpers
- * isValidCategoria / isValidTipo to validate slugs.
- * The LLM/agent is responsible for resolving free-text to slug BEFORE
- * calling reporte_slot_llenar — slots expect slugs, not free-form text.
+ * For categoria/tipo: validators are async and use resolveCategoriaSlug /
+ * resolveTipoSlug to normalize free-text (names, capitalized variants, accented
+ * forms) to canonical slugs.  The stored slot value is always the slug.
  */
 
 import { z } from "zod";
 import type { ReporteState } from "./state-machine";
-import { isValidCategoria, isValidTipo } from "@/validation/taxonomy";
+import { resolveCategoriaSlug, resolveTipoSlug } from "@/validation/taxonomy";
 import { LatLngSchema } from "@/validation/zod-schemas";
 
 // ---------------------------------------------------------------------------
@@ -94,14 +93,14 @@ export const SLOT_CONFIG: Record<ReporteState, StateSlotConfig> = {
           if (!parsed.success) {
             return { success: false, error: "La categoría debe ser un texto no vacío." };
           }
-          const valid = await isValidCategoria(parsed.data);
-          if (!valid) {
+          const slug = await resolveCategoriaSlug(parsed.data);
+          if (slug === null) {
             return {
               success: false,
-              error: `Categoría no reconocida: "${parsed.data}". Proporciona un slug de categoría válido.`,
+              error: `Categoría no reconocida: "${parsed.data}". Categorías válidas: alumbrado, arbolado, infraestructura, limpia, parques, monumentos, animales, salud, transporte, cultura, restaurantes, hospedaje, recreativo, emergencias, recomendaciones, otro.`,
             };
           }
-          return { success: true, data: parsed.data };
+          return { success: true, data: slug };
         },
       },
     ],
@@ -119,8 +118,11 @@ export const SLOT_CONFIG: Record<ReporteState, StateSlotConfig> = {
           if (!parsed.success) {
             return { success: false, error: "El tipo debe ser un texto no vacío." };
           }
-          // Loose validation at slot level — full categoria+tipo cross-validation
-          // happens in tools.ts before calling the RPC.
+          // FIXME: asyncValidator only receives `value` — no access to the flow's
+          // current `categoria` slot.  resolveTipoSlug needs a categoriaSlug to
+          // scope the lookup.  Without it we fall through to loose validation here;
+          // the full categoria+tipo cross-validation (with resolveTipoSlug) happens
+          // in tools.ts where both values are available before calling the RPC.
           return { success: true, data: parsed.data };
         },
       },

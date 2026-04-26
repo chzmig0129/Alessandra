@@ -190,6 +190,74 @@ export async function suggestTipoFromKeyword(
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// Slug resolution helpers (accept name variants, accent/case insensitive)
+// ---------------------------------------------------------------------------
+
+/**
+ * Normalizes a string to lowercase ASCII without diacritics.
+ * Used internally by resolveCategoriaSlug and resolveTipoSlug.
+ */
+function normalizeStr(s: string): string {
+  return s.toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, "").trim();
+}
+
+/**
+ * Accepts any of: exact slug, exact name, partial name match
+ * (all case+accent insensitive) and returns the canonical category slug.
+ * Returns null when no match is found.
+ */
+export async function resolveCategoriaSlug(input: string): Promise<string | null> {
+  const { categorias } = await loadReportTaxonomy();
+  const norm = normalizeStr(input);
+  if (!norm) return null;
+  // 1. Exact slug match (slugs are already lowercase ASCII)
+  if (categorias.has(norm)) return norm;
+  // 2. Lookup by name (case+accent insensitive) against report_taxonomy
+  const { data, error } = await supabaseAdmin
+    .from("report_taxonomy")
+    .select("slug, name")
+    .eq("kind", "category")
+    .eq("active", true);
+  if (error || !data) return null;
+  // 3. Exact name match
+  for (const row of data) {
+    if (normalizeStr(row.name) === norm) return row.slug as string;
+  }
+  // 4. Partial match: input contained in name OR name contained in input
+  for (const row of data) {
+    const nameNorm = normalizeStr(row.name);
+    if (nameNorm.includes(norm) || norm.includes(nameNorm)) return row.slug as string;
+  }
+  return null;
+}
+
+/**
+ * Accepts any of: exact slug, exact type name, partial name match, keywords
+ * (all case+accent insensitive) and returns the canonical tipo slug.
+ * Returns null when no match is found or the category does not exist.
+ */
+export async function resolveTipoSlug(categoriaSlug: string, input: string): Promise<string | null> {
+  const { tipos } = await loadReportTaxonomy();
+  const norm = normalizeStr(input);
+  if (!norm) return null;
+  const map = tipos.get(categoriaSlug);
+  if (!map) return null;
+  // 1. Exact slug match
+  if (map.has(norm)) return norm;
+  // 2. Exact name match
+  for (const [slug, info] of map.entries()) {
+    if (normalizeStr(info.name) === norm) return slug;
+  }
+  // 3. Partial name match: input contained in name OR name contained in input
+  for (const [slug, info] of map.entries()) {
+    const n = normalizeStr(info.name);
+    if (n.includes(norm) || norm.includes(n)) return slug;
+  }
+  // 4. Keyword-based fallback (attributes.keywords[])
+  return await suggestTipoFromKeyword(categoriaSlug, input);
+}
+
 export async function getRoutingArea(
   categoria: string,
   tipo: string,

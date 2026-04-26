@@ -23,7 +23,7 @@ import { callCrearLead } from "./folio";
 import { analyzeReportContent } from "./ai-analysis";
 import { analyzeImage } from "@/tools/shared/vision";
 import { lookupEmergencyContacts } from "@/tools/shared/emergency-contacts";
-import { isUrgentCategory, isValidTipo, getTiposForCategoria, suggestTipoFromKeyword } from "@/validation/taxonomy";
+import { isUrgentCategory, isValidTipo, getTiposForCategoria, suggestTipoFromKeyword, resolveTipoSlug, resolveCategoriaSlug } from "@/validation/taxonomy";
 import { getTurnContext } from "@/lib/turn-context";
 
 // ---------------------------------------------------------------------------
@@ -397,7 +397,10 @@ export const reporteSlotLlenar = createTool({
     const currentState = flow.step as ReporteState;
     const stateConfig = SLOT_CONFIG[currentState];
 
-    // 2. Validate the slot value if a validator exists for this state's slot
+    // 2. Validate the slot value if a validator exists for this state's slot.
+    //    Track the canonical form returned by the validator so we persist the
+    //    normalized slug, not whatever the LLM originally typed.
+    let canonicalValue: unknown = decodedValor;
     if (stateConfig) {
       const slotDef = stateConfig.slots.find((s) => s.key === slot);
       if (slotDef) {
@@ -406,6 +409,7 @@ export const reporteSlotLlenar = createTool({
           if (!validation.success) {
             return { ok: false as const, error: validation.error };
           }
+          canonicalValue = validation.data; // keep the normalized form
         } else if (slotDef.validator) {
           const parsed = slotDef.validator.safeParse(decodedValor);
           if (!parsed.success) {
@@ -414,13 +418,28 @@ export const reporteSlotLlenar = createTool({
               error: parsed.error.issues.map((i) => i.message).join("; "),
             };
           }
+          canonicalValue = parsed.data; // keep the normalized form
         }
+      }
+    }
+
+    // Fix 2 — normalize tipo against the current categoria before writing.
+    // The asyncValidator in slots.ts cannot see the flow, so we do the
+    // categoria-scoped slug resolution here where both values are available.
+    if (slot === "tipo" && typeof canonicalValue === "string") {
+      const currentCategoria =
+        typeof flow.slots["categoria"] === "string" ? flow.slots["categoria"] : "";
+      if (currentCategoria) {
+        const tipoSlug = await resolveTipoSlug(currentCategoria, canonicalValue);
+        if (tipoSlug) canonicalValue = tipoSlug;
+        // If null, leave as-is — reporte_confirmar_y_crear will handle the
+        // cross-validation and auto-correction with isValidTipo / suggestTipoFromKeyword.
       }
     }
 
     // 3. Atomic per-slot write — eliminates race when LLM fires parallel slot_llenar calls.
     //    Each call does jsonb_set at the Postgres level; no read-modify-write of the full JSONB.
-    const slotWriteResult = await setFlowSlot(resolvedConvId, slot, decodedValor);
+    const slotWriteResult = await setFlowSlot(resolvedConvId, slot, canonicalValue);
     if (!slotWriteResult.ok) {
       return { ok: false as const, error: slotWriteResult.error };
     }
@@ -584,9 +603,28 @@ export const reporteConfirmarYCrear = createTool({
     const flow = flowResult.flow;
     const slots = flow.slots;
 
-    // 2. Extract required fields from slots
-    const categoria = typeof slots["categoria"] === "string" ? slots["categoria"] : "";
-    const tipo = typeof slots["tipo"] === "string" ? slots["tipo"] : "";
+    // 2. Extract required fields from slots, normalizing to canonical slugs
+    //    as a defense-in-depth measure (in case slot_llenar stored a non-slug value).
+    let categoria = typeof slots["categoria"] === "string" ? slots["categoria"] : "";
+    if (categoria) {
+      const canonicalCat = await resolveCategoriaSlug(categoria);
+      if (canonicalCat && canonicalCat !== categoria) {
+        // Persist correction so subsequent reads are consistent.
+        await setFlowSlot(resolvedConvId, "categoria", canonicalCat);
+        slots["categoria"] = canonicalCat;
+        categoria = canonicalCat;
+      }
+    }
+
+    let tipo = typeof slots["tipo"] === "string" ? slots["tipo"] : "";
+    if (tipo && categoria) {
+      const canonicalTipo = await resolveTipoSlug(categoria, tipo);
+      if (canonicalTipo && canonicalTipo !== tipo) {
+        await setFlowSlot(resolvedConvId, "tipo", canonicalTipo);
+        slots["tipo"] = canonicalTipo;
+        tipo = canonicalTipo;
+      }
+    }
     const descripcion =
       typeof slots["descripcion"] === "string" ? slots["descripcion"] : "";
     const ubicacion = slots["ubicacion"];
